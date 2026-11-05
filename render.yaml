@@ -1,0 +1,7 @@
+# Render Blueprint (optional). Free instances sleep after ~15 min idle; use a paid instance for always-on play.
+services:
+  - type: web
+    name: primal-mischief
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz

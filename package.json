@@ -1,0 +1,18 @@
+{
+  "name": "primal-mischief",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Turn-based civilization-building card battler. Build civilizations. Dismantle theirs.",
+  "license": "UNLICENSED",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "npm run dev -w @pm/client",
+    "dev:server": "npm run dev -w @pm/server",
+    "build": "npm run build -w @pm/client && npm run build -w @pm/server",
+    "test": "npm test -w @pm/engine && npm test -w @pm/server",
+    "typecheck": "tsc -p packages/engine && tsc -p apps/client --noEmit && tsc -p apps/server --noEmit",
+    "simulate": "npm run simulate -w @pm/engine",
+    "start": "node apps/server/dist/server.js"
+  },
+  "engines": { "node": ">=20" }
+}

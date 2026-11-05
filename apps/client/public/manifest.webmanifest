@@ -1,0 +1,2 @@
+{ "name": "Primal Mischief", "short_name": "Mischief", "start_url": "./", "display": "fullscreen", "orientation": "any",
+  "background_color": "#120e0a", "theme_color": "#120e0a", "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }] }
