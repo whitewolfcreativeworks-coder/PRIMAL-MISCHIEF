@@ -207,6 +207,7 @@ export class Theater {
   private t = 0;
   private last = 0;
   private raf = 0;
+  private started = 0;
   speed = 1;
   /** When set, this scene replays whenever the queue runs dry (card close-ups). */
   loop: (() => Vignette) | null = null;
@@ -247,8 +248,9 @@ export class Theater {
     if (!v) { cancelAnimationFrame(this.raf); this.raf = 0; this.renderer.clear(); return; }
     this.t = 0;
     this.stage.clear();
-    v.setup(this.stage);
+    try { v.setup(this.stage); } catch (e) { console.error('hologram scene failed to start', e); this.current = null; this.stage.clear(); this.next(); return; }
     this.last = performance.now();
+    this.started = this.last;
     if (!this.raf) this.raf = requestAnimationFrame(this.frame);
   }
 
@@ -256,15 +258,23 @@ export class Theater {
     this.raf = 0;
     const v = this.current;
     if (!v) return;
-    const dt = Math.min(0.05, (now - this.last) / 1000) * this.speed;
+    // Follow the real clock (with a generous cap) so slow GPUs drop frames instead of slowing the game.
+    const dt = Math.min(0.25, Math.max(0, (now - this.last) / 1000)) * this.speed;
     this.last = now;
     this.t += dt;
     this.resize();
     this.stage.root.rotation.y = Math.sin(this.stage.time * 0.35) * 0.18; // gentle orbit for depth
-    v.update(this.stage, Math.min(this.t, v.duration));
-    this.stage.tick(dt);
-    this.renderer.render(this.stage.scene, this.camera);
-    if (this.t >= v.duration) { this.finish(); return; }
+    try {
+      v.update(this.stage, Math.min(this.t, v.duration));
+      this.stage.tick(dt);
+      this.renderer.render(this.stage.scene, this.camera);
+    } catch (e) {
+      // A broken scene must never freeze the game: log it and move on.
+      console.error('hologram scene failed', e);
+      this.finish();
+      return;
+    }
+    if (this.t >= v.duration || now - this.started > (v.duration / this.speed) * 1000 + 1500) { this.finish(); return; }
     this.raf = requestAnimationFrame(this.frame);
   };
 
