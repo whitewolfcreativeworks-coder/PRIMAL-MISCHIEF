@@ -106,3 +106,32 @@ Olmec, Mississippian cultures, Moche. Notes from the original brief:
   religion. Lean on urban planning, drainage, standardized weights.
 - **Mississippian**: earthwork mounds (Cahokia); consult descendant
   communities' public guidance where possible.
+
+## v0.3 additions: the five Ages and new cards
+
+Each civilization now climbs through five named Ages. These are game
+abstractions over long, overlapping histories, not a strict chronology:
+
+- **Kush:** Riverside Villages → Kerma → Napata → Meroë → Golden Age of Meroë.
+  Kerma (c. 2500–1500 BCE) is an earlier Nubian kingdom in the same region;
+  presenting it as an Age of Kush follows the long Nubian lineage and is a
+  simplification. The Western Deffufa is a real mudbrick structure at Kerma.
+  Cattle were central to Kerma culture (cattle skulls surround some burials).
+- **Aksum:** Highland Villages → Dʿmt → Early Aksum → Red Sea Power → Golden
+  Age. Dʿmt was a pre-Aksumite kingdom in the same highlands. Aksumite capture
+  and taming of elephants is described by ancient writers; their military use
+  is uncertain, which the card flavor says.
+- **Carthage:** Tyrian Trading Post → Qart-Hadasht (“New City”) → Mistress of
+  the Sea → Lords of the West → Golden Age. Purple (murex) dye was a famed
+  Phoenician industry; Rome translated the agricultural treatise of the
+  Carthaginian writer Mago; Carthage fielded North African forest elephants.
+- **Sumer:** Ubaid Villages → Uruk → City-States → Ur → Golden Age. The Ubaid
+  period precedes Sumer proper; arched reed houses (mudhif) are still built in
+  the southern marshes. *Lugal* (“big man”) was a Sumerian royal title. The
+  Stele of the Vultures shows a dense shield formation from Lagash.
+- **Inca:** Cusco Valley → Kingdom of Cusco → Tawantinsuyu → The Four Quarters
+  United → Golden Age. Sacsayhuamán is a real fortress-complex above Cusco.
+  Star-headed maces are attested Andean weapons.
+
+The riverbank skylines are procedural, impressionistic illustrations of each
+civilization’s architectural vocabulary at each Age, not reconstructions.

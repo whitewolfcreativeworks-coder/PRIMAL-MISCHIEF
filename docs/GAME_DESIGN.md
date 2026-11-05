@@ -1,212 +1,151 @@
-# Primal Mischief — Game Design (v0.1)
+# Primal Mischief — Game Design (v0.3, “the river”)
 
-> Build civilizations. Create combinations. Outsmart opponents. Tear down empires.
+> Two civilizations face each other across a river. Each is racing to grow,
+> and each threatens the other’s prosperity. Every turn you choose: grow, or
+> guard and strike.
 
-This document describes the rules as implemented in `packages/engine`. The
-engine is the source of truth; if this file and the code disagree, the code
-wins and this file should be fixed.
+The rules engine (`packages/engine`) is the source of truth. If this file and
+the code disagree, the code wins and this file should be fixed.
 
-## 1. Design pillars
+## 1. Pillars
 
-1. **Civilizations are systems, not health bars.** Buildings feed, house,
-   arm and enrich each other. Taking the right piece out matters more than
-   raw damage.
-2. **Mischief is a philosophy.** Every strong line of play has an answer:
-   sabotage, a reaction during the opponent's turn, or a reversal.
-3. **Thinking beats tapping.** No timers or reflex windows in the rules.
-   Momentum rewards *sequencing*, never physical speed.
-4. **Readable reversals.** At most one response per threat. No stack, no
-   infinite interruption chains.
+1. **Build or fight, every turn.** The blind pick forces the central choice:
+   growth cards or military cards. Each choice has an advantage and a cost.
+2. **Civilizations evolve.** Five Ages. Each Age makes both of your decks
+   stronger and visibly transforms your city on its riverbank.
+3. **Mischief.** Every strong move has an answer: blockers, walls, towers, and
+   one reaction per threat (ambush, retreat, turn the tide, treaty, foil, mirror).
+4. **Thinking beats tapping.** No timers or reflex windows.
 
 ## 2. Winning
 
 | Path | Condition |
 |---|---|
-| **Conquest** | Opponent's Stability falls to 0 (starts at 20). |
-| **Legacy** | Reach 20 Legacy (from temples, stelae, wonders). |
-| **Chronicle** (fallback) | After 60 player-turns, highest Stability + Legacy wins. |
+| **Golden Age** | Complete Age V: 8 + 10 + 12 + 14 + 16 = 60 Progress in all. |
+| **Conquest** | The rival’s Stability falls from 22 to 0. |
+| Chronicle (fallback) | After 80 player-turns, most total Progress + Stability. |
 
-Stability is lost through attacks on the city, **every building destroyed
-(−1)**, famine (−2) and reshuffling an empty deck (−1). So "strategic
-collapse" is not a separate rule — it is what happens when an economy
-fails: buildings fall, armies starve, and Stability bleeds out.
+In AI-vs-AI simulation about 58% of games end in a Golden Age and 42% in
+conquest; matches last about 14–15 turns per player.
 
-In AI-vs-AI simulation roughly two thirds of games end by Conquest and one
-third by Legacy, so both paths are live.
+## 3. The two decks and the blind pick
 
-## 3. Resources
+Every civilization brings a **Civilization deck** (growth) and a **Military
+deck** (units, forts, tactics, reactions). Both are built in five Age tiers.
 
-| Resource | Source | Use / risk |
-|---|---|---|
-| **Goods** | 3 per turn + buildings (Quarry, Market, Port…) | Pay card costs. Carry over (cap 15), so saving for a reaction is a real choice. |
-| **Food** | Farms, Terraces, Canals | Each unit has upkeep. Shortfall at turn start = **famine**. |
-| **Legacy** | Temples, stelae, wonders | Victory track. |
-| **Stability** | Starts at 20 | Your civilization's cohesion. 0 = collapse. |
-| **Momentum** | Chains, damaging attacks, reactions, holding the line | Spend on your Signature (3) or Rally (2: draw a card). Cap 5. |
+At the start of each turn, after income, you **refill your hand to 6**,
+choosing how many cards come from each deck: all of one, all of the other, or
+any mix. Picks are face down; you only know which deck a card comes from. You
+may discard cards first. Sumer’s scribes see the top card of each deck before
+choosing.
+
+The decks start with only Age I cards. **Entering a new Age shuffles that
+Age’s cards into both decks and retires cards two Ages old**, so your options
+genuinely improve as your civilization grows.
 
 ## 4. Turn structure
 
-1. **Upkeep** — pay mercenary wages (or they desert); collect Goods, Food
-   (production − upkeep) and Legacy; resolve famine; draw a card.
-2. **Main** — in any order: play cards, attack, use Signature, Rally.
-3. **End** — buildings in Unrest count down; temporary unit damage and
-   buffs clear.
+1. **Upkeep**: gain Prosperity (base 3/4/5/6/7 by Age, plus buildings), gain
+   Progress from growth buildings, pay army upkeep strongest-first. Units you
+   cannot pay desert.
+2. **Pick**: refill to 6 (see above).
+3. **Main**: play cards (pay Prosperity), send ready units across the river,
+   invoke your Signature (3 Momentum, once per turn), end the turn.
 
-The first player skips their first draw; the second player starts with an
-extra card and 1 Momentum. Simulated first-player win rate: ~46%.
+The second player starts with +1 Prosperity and +1 Momentum.
 
-## 5. Civilization construction and structural instability
+## 5. Resources
 
-Buildings provide **tags** and some **require** a tag from another working
-building:
+| | Source | Use |
+|---|---|---|
+| **Prosperity** | Income each turn; Markets, Harbors, Farms | Pay for cards; pay army upkeep. Cap 20. |
+| **Progress** | Civilization cards (on play) and growth buildings (each turn) | Fills the Age bar. Lost to raids and fallen buildings. Never drops you back an Age. |
+| **Stability** | Starts at 22 | Your city’s cohesion. 0 = conquest. |
+| **Momentum** | Winning a fight, holding the bank, playing a reaction (+1); a new Age (+2) | Signature abilities. Cap 5. |
 
-```
-Farm ─┬─► Barracks (units +1 Health)
-      ├─► Granary (famine protection)
-      └─► Irrigation Canals (Sumer: every Farm +1 Food)
-Road / Harbor ─► Market (+2 Goods) ─► Aksumite Mint
-Quarry ─┬─► Workshop (buildings −1 cost; enables Battering Rams)
-        └─► Iron Furnaces of Meroë (Kush: units +1 Strength)
-```
+The core tension: **soldiers are paid from the same Prosperity that pays for
+growth.** A big army slows your civilization down.
 
-Support is computed to a fixpoint, so losses **cascade**: burn a Road and
-the Market stops; if the Mint depended on that Market, it stops too. A
-building that is not working shows a broken-link badge and produces nothing.
+## 6. Building and its fragility
 
-**Unrest** (from Saboteurs, Blockade) switches a building off for a number
-of its owner's turns without destroying it — the "temporary instability"
-lever. Because it also removes the building's tags, a well-aimed Unrest can
-knock out half a city for a turn.
+Buildings stay on your bank and give Progress when built; many add Prosperity
+or Progress every turn. Some depend on others (Market ← Road or Harbor,
+Granary ← Farm, Workshop ← Quarry, Iron Furnaces ← Quarry). Support is
+computed to a fixpoint, so losses cascade. **Unrest** (Saboteurs, Blockade)
+switches a building off for a few turns, together with everything leaning on
+it. **A fallen building costs its owner 1 Stability and Progress equal to its
+Age.**
 
-**Famine** is the Jenga piece for armies: a big army needs farms. Spoil the
-Stores (−4 Food) or knocking out a Farm can starve an opponent who
-over-built their military.
+## 7. Crossing the river
 
-## 6. Combat
+1. Units deploy to your bank and can attack from your next turn (Swift units,
+   or any unit while you have a Road or The Cothon, can attack at once).
+2. The attacker picks a target: **the city** (Stability, toward conquest) or a
+   **building** (dismantle the rival’s engine and cost them Progress).
+3. The defender chooses blockers and may play one reaction. **Blockers fight
+   with +1 Strength on their own bank.** Towers hit every attacker for 1 first.
+4. Simultaneous clash; damage past the blockers hits walls, then the target.
+5. A breakthrough earns the attacker 1 Momentum; Raiders also steal 2
+   Progress each. Holding the bank earns the defender 1 Momentum.
 
-1. The attacker chooses any ready units and a target: the **city** or one
-   **building**.
-2. A **response window** opens. The defender may assign blockers (any unit
-   that has not attacked or blocked this turn) and may play **one
-   Reaction**.
-3. Resolution is simultaneous: blockers' strength is dealt to attackers
-   (weakest first); attacking strength is dealt to blockers (weakest first).
-4. Damage that gets past every blocker hits **Walls** first (if any), then
-   the target.
-5. If damage reaches the target, the attacker gains 1 Momentum (and
-   Raiders steal 2 Goods each). If the defender blocked everything, the
-   defender gains 1 Momentum.
+Units that attacked are exhausted and cannot block on the rival’s next turn.
 
-**Exhaustion:** units that attacked cannot block until their owner's next
-turn. This was added after simulation showed that free blocking made
-attacking pointless; it creates the core attack-or-defend tension.
-
-Keywords: **Ranged** (+1 Strength when blocking), **Siege** (+2 Strength
-against buildings or walled cities), **Swift** (attack the turn it arrives),
-**Raider** (steal Goods on a hit), **Wage** (pay Goods each turn or desert).
-
-## 7. Counterplay — reactions
-
-Reactions are cards played only in the response window. One per threat;
-the attacker cannot respond to the response. That keeps reversals
-understandable.
+## 8. Reactions
 
 | Reaction | Answers | Effect |
 |---|---|---|
 | Shield Wall | Attack | Blockers +1/+1 this combat |
-| Ambush | Attack | 2 damage to every attacker *before* combat |
-| Feigned Retreat | Attack | Cancel the attack; attackers take 1 each |
-| Turn the Tide | Attack | Blockers deal double; excess hits the **attacker's** city |
-| Vigilant Watch | Hostile scheme | Cancel it |
-| Mirror the Scheme | Hostile scheme | Cancel it and apply it **to its caster** (the "Reverse card") |
+| Ambush | Attack | 2 damage to every attacker before combat |
+| Feigned Retreat | Attack | Cancel; each attacker takes 1 damage |
+| Turn the Tide | Attack | Blockers deal double; excess hits the attacker’s city |
+| Treaty of Kings (Aksum) | Attack | Cancel; the attacker gains 3 Prosperity |
+| Vigilant Watch | Hostile tactic | Cancel it |
+| Mirror the Scheme | Hostile tactic | Cancel it and turn it on its caster |
 
-Information is part of the game: Goods carry over, so an opponent sitting
-on 3 unspent Goods might be holding Turn the Tide. Spy Network reveals the
-opponent's hand for a turn.
+## 9. Civilizations
 
-## 8. Chains and Momentum (the card-game inspirations)
+| | Identity | Trait (always on) | Signature (3 Momentum) |
+|---|---|---|---|
+| **Kush** | Iron and the Bow | Ranged units +1 Strength | Rain of Arrows: 2 damage to every enemy unit |
+| **Aksum** | Coin and Stone | Harbors +1 Prosperity | Red Sea Commerce: +2 Prosperity, +1 Progress per Market/Harbor |
+| **Carthage** | Sea Lanes and Silver | Units cost 1 less | Close the Sea Lanes: rival −4 Prosperity −2 Progress, you +3 Prosperity |
+| **Sumer** | Canal and Tablet | Scribes: see the top card of each deck when picking | Rebuild the City: full repair, end Unrest, +3 Stability |
+| **Inca** | Road and Terrace | Storehouses: lose half Progress to raids and fallen buildings | Mountain Logistics: heal/ready units, +3 Prosperity, draw one of each |
 
-- **Crazy Eights → Chains.** Play a card of the same suit as the card you
-  played just before it: +1 Momentum. Several cards add a Chain bonus
-  (Caravan: draw; Harvest Festival: +2 Stability; Gold Coinage: +1 Legacy).
-- **Poker sets → collection.** The Great Stele gains Legacy for every other
-  Star building; the Aksumite Mint for every other Silk building.
-- **UNO Reverse → Mirror the Scheme / Turn the Tide.**
-- **Go Fish → information.** Spy Network; open Goods counts.
-- **Slapjack → response windows**, but untimed: anticipation, not reflexes.
+Each civilization has its own card in every Age of both decks (20 unique
+cards) on top of a shared backbone, and its own five Age names (e.g. Kush:
+Riverside Villages → Kerma → Napata → Meroë → Golden Age of Meroë). The full
+list is in `packages/engine/src/cards/` and the in-game Codex.
 
-Suits: Earth (food), Stone (construction), Bronze (military), Silk (trade),
-Star (culture), Shadow (espionage).
-
-## 9. Civilizations in v0.1
-
-Five civilizations were chosen for distinct play, geographic range and
-strong documented material culture (see `HISTORY_NOTES.md`):
-
-| Civilization | Identity | Signature (3 Momentum) |
-|---|---|---|
-| **Kingdom of Kush** | Iron and the Bow — disciplined military economy, strong defence | *Land of the Bow*: 1 damage to every enemy unit; your units +1 Strength |
-| **Kingdom of Aksum** | Coin and Stone — trade compounding into Legacy | *Red Sea Commerce*: +3 Goods, +2 Legacy, draw |
-| **Carthage** | Sea Lanes and Silver — mercenaries, raids, blockades | *Close the Sea Lanes*: opponent −4 Goods, you +2 |
-| **Sumer** | Canal and Tablet — resilient infrastructure and card flow | *Rebuild the City*: full repair, clear Unrest, +2 Stability |
-| **Inca** | Road and Terrace — logistics, famine-proof, sturdy stone | *Mountain Logistics*: draw 2, +2 Food |
-
-Three of the five are African civilizations, following the brief's
-direction that Africa receive substantial representation. The full
-candidate roster (Egypt, Kerma, Nok, Assyria, Hittites, Achaemenid Persia,
-Phoenicia, Indus Valley, Han China, Khmer, Greece, Rome, Norse, Maya, Olmec,
-Mississippian, Moche) remains the expansion list; each needs only a
-`CivDef` and 5–6 card definitions.
-
-### Why these five first
-
-- **Distinct verbs:** Kush fights, Aksum trades, Carthage disrupts, Sumer
-  endures, Inca moves. Each pairing plays differently.
-- **Historical grounding:** each has well-attested, visually distinctive
-  architecture (Meroitic pyramids, Aksumite stelae, the Carthaginian cothon,
-  ziggurats, Inca terraces and roads) that suits procedural art.
-- **Balance tractability:** five decks of 24 cards is a pool that can be
-  simulated exhaustively (see below).
+The other 17 candidate civilizations from the brief remain the expansion list
+(see `HISTORY_NOTES.md`). A new civilization needs a `CivDef` (palette, Age
+names, trait, signature) and ten cards.
 
 ## 10. Balance
 
-`npm run simulate -- 20 normal` plays every ordered pairing 20 times with
-the normal AI. Latest runs:
+`npx tsx packages/engine/test/simulate-par.ts 10 normal` plays every ordered
+pairing ten times with the normal AI. Latest (200 games):
 
-| Civ | Normal AI (400 games) | Hard AI (160 games) |
-|---|---|---|
-| Kush | 60% | 50% |
-| Aksum | 55% | 38% |
-| Carthage | 48% | 69% |
-| Sumer | 45% | 20% |
-| Inca | 43% | 73% |
+| Civ | Win rate |
+|---|---|
+| Kush | 55% |
+| Aksum | 46% |
+| Carthage | 58% |
+| Sumer | 48% |
+| Inca | 44% |
 
-First player wins 45% (normal) / 43% (hard). Average length 23 player-turns
-(≈11–12 each) with the normal AI.
+First player wins 56% (±7% at this sample size). Known outlier: Carthage’s
+cheap mercenaries beat Sumer about 80% of the time in AI play.
 
-**Open issue:** the hard AI (one-turn lookahead) favours the aggressive
-decks — Inca and Carthage — and Sumer's slow, defensive plan underperforms.
-That suggests stronger play rewards tempo more than the normal AI reveals.
-Next balancing steps should come from human play-tests: likely levers are
-Sumer's early defence (Walls of Uruk cost, Battle Wagon stats) and the
-value of cheap Swift.
+Tuning so far: the riverbank +1 for defenders (without it attacks snowballed
+and 60% of games ended in conquest); Aksum’s trade trait narrowed to Harbors
+and its Signature tied to its trade buildings; Inca’s storehouses and Signature
+strengthened; Carthage’s mercenary upkeep reduced; the AI taught to use
+Sumer’s scribes. AI-vs-AI is a proxy; human play will find other lines.
 
-Tuning history: the first pass had Kush at 94% (furnace + double-attack
-Kandake), Aksum at 25% (goods with no outlet). Fixes: exhaustion rule,
-Legacy target 15→20, furnace now needs a Quarry, Kandake is a buff instead
-of a second attack, Aksum's Signature and Gold Coinage convert trade into
-Legacy, Chasqui Relay draws less; Inca's Signature no longer re-readies
-the army, Slingers lost Swift and the Qhapaq Ñan costs 3.
+## 11. Guard rails
 
-AI-vs-AI balance is a proxy. Human play will find lines the heuristic AI
-does not; treat these numbers as a floor for further testing.
-
-## 11. Guard rails tested
-
-- No infinite loops: every effect is finite; response windows cannot nest;
-  AI turns are capped; matches have a hard turn limit.
-- No unstoppable combinations found in simulation; every hostile scheme
-  has two counters and every attack four.
-- First-player advantage measured and compensated.
-- Snowballing: Goods cap 15, Momentum cap 5, hand limit 9, at most 7
-  buildings and 6 units.
+No infinite loops (effects are finite, response windows cannot nest, AI turns
+are capped, hard turn limit). Hidden information: both draw piles and the
+opponent’s hand are never sent to a client; the scribes’ peek is visible only
+to its owner. Caps: Prosperity 20, Momentum 5, hand 9, 8 buildings, 6 units.

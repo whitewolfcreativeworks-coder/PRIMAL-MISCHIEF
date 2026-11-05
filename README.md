@@ -2,16 +2,17 @@
 
 **Build civilizations. Dismantle theirs.**
 
-A turn-based civilization-building card battler for the browser, designed
-mobile-first for iPad. Choose a historical civilization, raise a city whose
-buildings depend on one another, then outmanoeuvre your rival with armies,
-sabotage and reversals — against the computer or a friend online.
+A turn-based civilization card battler for the browser, designed mobile-first
+for iPad. Two civilizations face each other across a river. Every turn you
+choose, blind, how many cards to draw from your **Civilization** deck (growth)
+and your **Military** deck (armies, forts, tactics, reactions). Grow through
+five Ages to a Golden Age, or cross the river and break your rival’s city.
 
-- 5 civilizations: **Kush, Aksum, Carthage, Sumer, Inca**
-- 50 cards with original procedural artwork
-- Two victory paths: Conquest and Legacy
-- Reactions during your opponent's turn: ambush, retreat, *Turn the Tide*, *Mirror the Scheme*
-- AI opponent (easy / normal / hard) and private online rooms
+- 5 civilizations, each with two decks across five Ages: **Kush, Aksum, Carthage, Sumer, Inca**
+- Riverbank cities that visibly grow with each Age
+- Hologram battles over the river: every card you play is acted out
+- Reactions on your rival’s turn: ambush, retreat, turn the tide, treaty, foil, mirror
+- AI opponent (easy / normal / hard), private online rooms, and an Academy lesson per civilization
 - No timers, no purchases, no blockchain
 
 ## Play locally
@@ -49,17 +50,14 @@ GitHub Pages and costs.
 
 ## How to play (short)
 
-1. Each turn you gain Goods, Food and Legacy, then draw.
-2. Spend Goods on buildings, units and actions. Buildings support each
-   other — Markets need Roads, Barracks need Farms. Knock out a support
-   and the whole chain stops.
-3. Tap glowing units, then the enemy city or a building, to attack.
-   Units that attack can't block on the next enemy turn.
-4. When attacked or schemed against, choose blockers and optionally one
-   Reaction.
-5. Play same-suit cards in a row to **chain** for Momentum; spend it on
-   your civilization's Signature.
-6. Win by reducing the rival's Stability to 0, or by reaching 20 Legacy.
+1. Each turn you collect Prosperity and pay your army’s upkeep.
+2. Refill your hand to 6, choosing how many cards come from each deck.
+3. Play Civilization cards for Progress; a full bar advances your Age and
+   puts stronger cards into both decks.
+4. Deploy units, then send them across the river at the rival’s city or one
+   of their buildings. Defenders get +1 Strength on their own bank.
+5. On your rival’s turn, block and play one reaction.
+6. Win by completing Age V (Golden Age) or bringing the rival’s Stability to 0.
 
 Full rules: [docs/GAME_DESIGN.md](docs/GAME_DESIGN.md).
 

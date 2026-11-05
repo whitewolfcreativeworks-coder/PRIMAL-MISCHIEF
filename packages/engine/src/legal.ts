@@ -1,4 +1,4 @@
-import { getCard, getCiv, RULES } from './data';
+import { getCard, getCiv } from './data';
 import { ACTION_REACTIONS, ATTACK_REACTIONS, canPlayCard, other } from './engine';
 import type { Action, CardDef, GameState, PlayerId } from './types';
 
@@ -16,19 +16,18 @@ export function listPlays(st: GameState, pid: PlayerId): Action[] {
   const p = st.players[pid];
   const seen = new Set<string>();
   for (const c of p.hand) {
-    if (seen.has(c.cardId)) continue; // identical cards are interchangeable
+    if (c.cardId === '?' || seen.has(c.cardId)) continue;
     if (canPlayCard(st, pid, c.uid)) continue;
     seen.add(c.cardId);
     for (const t of targetsFor(st, pid, getCard(c.cardId))) out.push({ type: 'play', uid: c.uid, targetUid: t });
   }
   const sig = getCiv(p.civ).signature;
   if (!p.signatureUsed && p.momentum >= sig.cost) out.push({ type: 'signature' });
-  if (p.momentum >= RULES.rallyCost && p.deck.length + p.discard.length > 0) out.push({ type: 'rally' });
   return out;
 }
 
 export function readyAttackers(st: GameState, pid: PlayerId): string[] {
-  return st.players[pid].units.filter((u) => u.ready && !u.attacked).map((u) => u.uid);
+  return st.players[pid].units.filter((u) => u.ready && !u.attacked && !(getCard(u.cardId).keywords ?? []).includes('guard')).map((u) => u.uid);
 }
 
 /** Reactions the defender could legally play right now. */
@@ -39,7 +38,7 @@ export function playableReactions(st: GameState, pid: PlayerId): string[] {
   return p.hand.filter((c) => {
     if (c.cardId === '?') return false;
     const card = getCard(c.cardId);
-    return card.kind === 'reaction' && !!card.reaction && allowed.includes(card.reaction) && p.goods >= card.cost;
+    return card.kind === 'reaction' && !!card.reaction && allowed.includes(card.reaction) && p.prosperity >= card.cost;
   }).map((c) => c.uid);
 }
 

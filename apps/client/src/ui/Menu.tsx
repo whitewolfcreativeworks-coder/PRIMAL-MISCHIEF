@@ -1,26 +1,13 @@
-import { cardPoolFor, CIVS, getCard, getCiv, maxCopies, RULES, validateDeck, type CivId, type Difficulty } from '@pm/engine';
+import { cardPoolFor, CIVS, getCiv, type CivId, type Difficulty, type Family } from '@pm/engine';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { CivEmblem } from '../art/motifs';
 import { CardFace } from './Card';
 import { Inspector } from './Inspector';
 import type { Lesson } from '../game/tutorial';
-import { Icon } from './icons';
+import { FAMILY_LABEL, Icon, ROMAN } from './icons';
 
 /** Build flag for the single-file offline edition (no game server, vs-computer only). */
 export const OFFLINE = import.meta.env.VITE_OFFLINE === '1';
-
-// ---------------------------------------------------------------- persistence
-
-export function loadDeck(civ: CivId): string[] {
-  try {
-    const raw = localStorage.getItem(`pm.deck.${civ}`);
-    if (raw) { const d = JSON.parse(raw); if (validateDeck(civ, d).length === 0) return d; }
-  } catch { /* ignore */ }
-  return [...getCiv(civ).starterDeck];
-}
-export function saveDeck(civ: CivId, deck: string[] | null) {
-  try { if (deck) localStorage.setItem(`pm.deck.${civ}`, JSON.stringify(deck)); else localStorage.removeItem(`pm.deck.${civ}`); } catch { /* ignore */ }
-}
 
 // ---------------------------------------------------------------- title
 
@@ -76,8 +63,10 @@ export function CivSelect({ title, chosen, onChoose, onBack, onDeck, children }:
             </div>
             <p className="civ-summary">{c.summary}</p>
             <p className="civ-history">{c.history}</p>
+            <div className="civ-sig"><Icon name="civ" size={14} /><b>{c.trait.name}</b> — {c.trait.text}</div>
             <div className="civ-sig"><Icon name="momentum" size={14} /><b>{c.signature.name}</b> — {c.signature.text}</div>
-            {chosen === c.id && onDeck && <span className="civ-deck-link" onClick={(e) => { e.stopPropagation(); onDeck(c.id); }}>Edit deck →</span>}
+            <div className="civ-ages">{c.ages.map((a, i) => <span key={a}><i>{ROMAN[i]}</i>{a}</span>)}</div>
+            {chosen === c.id && onDeck && <span className="civ-deck-link" onClick={(e) => { e.stopPropagation(); onDeck(c.id); }}>See its cards →</span>}
           </button>
         ))}
       </div>
@@ -115,55 +104,47 @@ export function LocalSetup({ civ, setCiv, onBack, onStart, onDeck }: {
   );
 }
 
-// ---------------------------------------------------------------- deck builder
+// ---------------------------------------------------------------- codex (the civilization's two decks, by Age)
 
-export function DeckBuilder({ civ, onDone }: { civ: CivId; onDone: () => void }) {
-  const [deck, setDeck] = useState<string[]>(() => loadDeck(civ));
+export function Codex({ civ, onDone }: { civ: CivId; onDone: () => void }) {
   const [peek, setPeek] = useState<string | null>(null);
-  const pool = useMemo(() => cardPoolFor(civ).sort((a, b) => (a.civ ? 0 : 1) - (b.civ ? 0 : 1) || a.kind.localeCompare(b.kind) || a.cost - b.cost), [civ]);
-  const count = (id: string) => deck.filter((d) => d === id).length;
-  const errors = validateDeck(civ, deck);
+  const [fam, setFam] = useState<Family>('civ');
   const c = getCiv(civ);
-  const add = (id: string) => { if (deck.length < RULES.deckSize && count(id) < maxCopies(getCard(id))) setDeck([...deck, id]); };
-  const remove = (id: string) => { const i = deck.indexOf(id); if (i >= 0) setDeck(deck.filter((_, j) => j !== i)); };
-  const byKind = (k: string) => deck.filter((d) => getCard(d).kind === k).length;
+  const pool = useMemo(() => cardPoolFor(civ), [civ]);
+  const copies = (id: string, age: number) => c.decks[fam][age - 1].filter((x) => x === id).length;
   return (
     <div className="screen deck-screen" style={{ '--c-primary': c.palette.primary, '--c-secondary': c.palette.secondary } as CSSProperties}>
       <header className="screen-head">
         <button className="btn ghost" onClick={onDone}>← Back</button>
-        <h2>{c.name} deck <small className={deck.length === RULES.deckSize ? 'ok' : 'warn'}>{deck.length}/{RULES.deckSize}</small></h2>
-        <div className="deck-tools">
-          <button className="btn ghost" onClick={() => setDeck([...c.starterDeck])}>Reset to starter</button>
-          <button className="btn primary" disabled={errors.length > 0} onClick={() => { saveDeck(civ, deck); onDone(); }}>Save</button>
+        <h2>{c.name} · the two decks</h2>
+        <div className="seg" role="tablist">
+          {(['civ', 'mil'] as Family[]).map((f) => <button key={f} role="tab" aria-selected={fam === f} className={fam === f ? 'on' : ''} onClick={() => setFam(f)}><Icon name={f} size={14} /> {FAMILY_LABEL[f]}</button>)}
         </div>
       </header>
-      <div className="deck-mix">
-        <span>Buildings {byKind('building')}</span><span>Units {byKind('unit')}</span><span>Actions {byKind('action')}</span><span>Reactions {byKind('reaction')}</span>
-        {errors.length > 0 && <span className="warn">{errors[0]}</span>}
-      </div>
-      <div className="pool">
-        {pool.map((card) => {
-          const n = count(card.id);
-          return (
-            <div key={card.id} className={`pool-item ${n ? 'in-deck' : ''}`}>
-              <CardFace cardId={card.id} civ={civ} onClick={() => setPeek(card.id)} />
-              <div className="pool-ctrl">
-                <button className="icon-btn" onClick={() => remove(card.id)} disabled={!n} aria-label={`Remove ${card.name}`}>−</button>
-                <span>{n}/{maxCopies(card)}</span>
-                <button className="icon-btn" onClick={() => add(card.id)} disabled={n >= maxCopies(card) || deck.length >= RULES.deckSize} aria-label={`Add ${card.name}`}>+</button>
-              </div>
+      <p className="academy-intro">Each Age shuffles stronger cards into both decks and retires the cards from two Ages back. Cards marked ★ belong only to {c.name.replace('Kingdom of ', '')}.</p>
+      {[1, 2, 3, 4, 5].map((age) => {
+        const ids = [...new Set(c.decks[fam][age - 1])];
+        return (
+          <section key={age} className="codex-age">
+            <h3><span>Age {ROMAN[age - 1]}</span> {c.ages[age - 1]}</h3>
+            <div className="pool">
+              {ids.map((id) => {
+                const card = pool.find((x) => x.id === id)!;
+                return (
+                  <div key={id} className="pool-item in-deck">
+                    <CardFace cardId={id} civ={civ} onClick={() => setPeek(id)} />
+                    <div className="pool-ctrl"><span>{card.civ ? '★ ' : ''}×{copies(id, age)}</span></div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </section>
+        );
+      })}
       {peek && (
         <div className="sheet-backdrop" onClick={() => setPeek(null)}>
           <div className="sheet wide" onClick={(e) => e.stopPropagation()}>
-            <Inspector cardId={peek} civ={civ}>
-              <button className="btn" onClick={() => remove(peek)} disabled={!count(peek)}>Remove one</button>
-              <button className="btn primary" onClick={() => add(peek)} disabled={count(peek) >= maxCopies(getCard(peek)) || deck.length >= RULES.deckSize}>Add to deck</button>
-              <button className="btn ghost" onClick={() => setPeek(null)}>Close</button>
-            </Inspector>
+            <Inspector cardId={peek} civ={civ}><button className="btn ghost big" onClick={() => setPeek(null)}>Close</button></Inspector>
           </div>
         </div>
       )}

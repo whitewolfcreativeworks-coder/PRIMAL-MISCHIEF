@@ -74,7 +74,7 @@ describe('multiplayer server', () => {
     const va = a.lastState();
     expect(va.players[1].hand.every((c) => c.cardId === HIDDEN_CARD)).toBe(true);
     expect(va.players[0].hand.every((c) => c.cardId !== HIDDEN_CARD)).toBe(true);
-    expect(va.players.every((p) => p.deck.every((c) => c.cardId === HIDDEN_CARD))).toBe(true);
+    expect(va.players.every((p) => [...p.piles.civ, ...p.piles.mil].every((c) => c.cardId === HIDDEN_CARD))).toBe(true);
     expect(va.rng).toBe(0);
     const vb = b.lastState();
     expect(vb.players[0].hand.every((c) => c.cardId === HIDDEN_CARD)).toBe(true);
@@ -88,6 +88,10 @@ describe('multiplayer server', () => {
     const active = st.active === 0 ? a : b;
     idle.act({ type: 'endTurn' });
     expect((await idle.next('error')).message).toMatch(/not your turn/i);
+    active.act({ type: 'play', uid: 'nope' });
+    expect((await active.next('error')).message).toMatch(/Pick your cards/i); // a turn starts with the blind pick
+    active.act({ type: 'draft', civ: 3, mil: 3 });
+    await active.next('state', (m) => m.view.phase === 'main');
     active.act({ type: 'play', uid: 'nope' });
     expect((await active.next('error')).message).toMatch(/not in your hand/i);
     // Replay the same seq: server resyncs without applying twice.
@@ -105,10 +109,10 @@ describe('multiplayer server', () => {
     c.close();
   });
 
-  it('rejects illegal decks and unknown rooms', async () => {
+  it('rejects unknown civilizations and unknown rooms', async () => {
     const c = new Client(); await c.open();
-    c.send({ t: 'create', name: 'X', civ: 'kush', deck: ['farm'] });
-    expect((await c.next('error')).message).toMatch(/Illegal deck/);
+    c.send({ t: 'create', name: 'X', civ: 'atlantis' as never });
+    expect((await c.next('error')).message).toMatch(/Unknown civilization/);
     c.send({ t: 'join', code: 'ZZZZZ', name: 'X', civ: 'kush' });
     expect((await c.next('error')).message).toMatch(/No room/);
     c.close();

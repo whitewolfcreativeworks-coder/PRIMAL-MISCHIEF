@@ -1,41 +1,45 @@
-// Primal Mischief — core type model.
+// Primal Mischief — core type model (v2: two decks, blind draft, five Ages).
 // Everything in GameState is plain JSON so it can be cloned, hashed,
 // sent over the network and replayed deterministically.
 
 export type PlayerId = 0 | 1;
 export type CivId = 'kush' | 'aksum' | 'carthage' | 'sumer' | 'inca';
 
-/** Card suits. Matching suits drive Chains and Momentum (see GAME_DESIGN.md). */
-export type Suit = 'earth' | 'stone' | 'bronze' | 'silk' | 'star' | 'shadow';
+/** The two decks every civilization brings. */
+export type Family = 'civ' | 'mil';
+export type Age = 1 | 2 | 3 | 4 | 5;
 
-export type CardKind = 'building' | 'unit' | 'action' | 'reaction';
+/**
+ * civ family:  building (stays on your bank) · development (one-shot growth)
+ * mil family:  unit · fort (defensive structure) · tactic (one-shot) · reaction (played on the rival's turn)
+ */
+export type CardKind = 'building' | 'development' | 'unit' | 'fort' | 'tactic' | 'reaction';
 
-export type Resource = 'goods' | 'food' | 'stability' | 'legacy' | 'momentum';
+export type Resource = 'prosperity' | 'progress' | 'stability' | 'momentum';
 
-/** Static abilities a supported building grants its owner. */
+/** Static abilities a working building or fort grants its owner. */
 export type Passive =
-  | 'wall' // absorbs overflow damage from attacks before the target is hit
-  | 'swift' // your units may attack the turn they are recruited
+  | 'wall' // absorbs damage that gets past your blockers
+  | 'tower' // deals 1 damage to every attacker before combat
+  | 'swift' // your units may attack the turn they are deployed
   | 'unitHp' // your units +1 health
   | 'unitStr' // your units +1 strength
   | 'blockStr' // your blocking units +1 strength
-  | 'buildDiscount' // your building cards cost 1 less (min 1)
-  | 'famineShield' // famine does not cost stability or units
-  | 'scribes' // draw an extra card at turn start while your hand is below 5
-  | 'mint' // +1 goods at turn start for each other supported Silk building
-  | 'irrigation'; // each of your Farms produces +1 food
+  | 'buildDiscount' // your Civilization cards cost 1 less (min 1)
+  | 'farmBoost'; // each of your Farms produces +1 Prosperity
 
-export type UnitKeyword = 'ranged' | 'siege' | 'swift' | 'raider';
+export type UnitKeyword = 'ranged' | 'siege' | 'swift' | 'raider' | 'guard';
 
 export type TargetSpec = 'none' | 'enemyBuilding' | 'ownBuilding';
 
 /** A single declarative effect step. Card behaviour is data, not code. */
 export type Effect =
-  | { op: 'gain'; res: Resource; amount: number; who?: 'self' | 'opp'; per?: PerCount }
-  | { op: 'draw'; n: number; ifTag?: string; elseN?: number }
-  | { op: 'damageBuilding'; amount: number } // uses chosen target
-  | { op: 'unrest'; turns: number } // uses chosen target
-  | { op: 'unrestSuit'; suit: Suit; turns: number } // all opponent buildings of a suit
+  | { op: 'gain'; res: Resource; amount: number; who?: 'self' | 'opp'; perTag?: string }
+  | { op: 'draw'; family?: Family; n: number; ifTag?: string; elseN?: number }
+  | { op: 'damageBuilding'; amount: number } // chosen enemy target
+  | { op: 'damageCity'; amount: number } // enemy city (Stability)
+  | { op: 'unrest'; turns: number } // chosen enemy target
+  | { op: 'unrestTag'; tag: string; turns: number } // every enemy building with a tag
   | { op: 'damageEnemyUnits'; amount: number }
   | { op: 'createUnit'; card: string; n: number }
   | { op: 'repair'; full?: boolean; amount?: number; clearUnrest?: boolean } // chosen own target
@@ -45,54 +49,51 @@ export type Effect =
   | { op: 'buffUnits'; str: number } // until end of turn
   | { op: 'revealHand' };
 
-export type PerCount =
-  | { kind: 'suitBuildings'; suit: Suit }
-  | { kind: 'tag'; tag: string };
-
 export interface CardDef {
   id: string;
   name: string;
+  family: Family;
   kind: CardKind;
-  suit: Suit;
-  cost: number;
-  civ?: CivId; // undefined = common card any civ may use
-  text: string; // rules text shown on the card
-  flavor?: string; // short historical note
-  art: string; // art motif key
+  age: Age; // the Age whose deck tier this card belongs to
+  cost: number; // Prosperity
+  civ?: CivId; // undefined = shared card
+  text: string;
+  flavor?: string;
+  art: string;
   rarity?: 'common' | 'rare' | 'wonder';
-  maxCopies?: number;
-  token?: boolean; // created by effects, never in decks
-  // buildings
+  token?: boolean;
+  // civilization cards
+  progress?: number; // Progress gained when played
+  income?: number; // Prosperity each turn while working
+  growth?: number; // Progress each turn while working
+  // buildings and forts
   integrity?: number;
-  goods?: number;
-  food?: number;
-  legacy?: number;
-  legacyPerSuit?: Suit; // +1 legacy per OTHER supported building of this suit
   tags?: string[];
-  requires?: string[]; // needs ANY one of these tags from another supported building
+  requires?: string[]; // needs ANY of these tags from another working building
   passives?: Passive[];
   // units
   str?: number;
   hp?: number;
-  upkeep?: number; // food per turn
-  wage?: number; // goods per turn, or the unit deserts
+  upkeep?: number; // Prosperity each turn, or the unit deserts
   keywords?: UnitKeyword[];
-  requiresToRecruit?: string; // tag you must control to play this unit
-  // actions / reactions
+  requiresToDeploy?: string;
+  // developments, tactics, reactions
   target?: TargetSpec;
-  hostile?: boolean; // opens a response window for the opponent
+  hostile?: boolean; // opens a response window for the rival
   effects?: Effect[];
-  chain?: { suit: Suit; effects: Effect[]; text: string };
   reaction?: ReactionKind;
 }
 
 export type ReactionKind =
   | 'shieldWall' // blockers +1 str +1 hp this combat
   | 'feignedRetreat' // cancel the attack; attackers take 1 damage each
-  | 'turnTheTide' // blockers deal double; excess hits attacker's city
+  | 'turnTheTide' // blockers deal double; excess hits the attacker's city
   | 'ambush' // 2 damage to every attacker before combat
-  | 'vigilantWatch' // cancel a hostile action
-  | 'mirror'; // cancel a hostile action and turn it on its caster
+  | 'treaty' // cancel the attack; the attacker gains 3 Prosperity
+  | 'vigilantWatch' // cancel a hostile tactic
+  | 'mirror'; // cancel a hostile tactic and turn it on its caster
+
+export type TraitKind = 'bowmen' | 'trade' | 'hiredSwords' | 'scribes' | 'storehouses';
 
 export interface CivDef {
   id: CivId;
@@ -101,10 +102,13 @@ export interface CivDef {
   era: string;
   epithet: string;
   summary: string;
-  history: string; // short, careful historical grounding
+  history: string;
   palette: { primary: string; secondary: string; accent: string; ink: string };
+  ages: [string, string, string, string, string]; // names of the five Ages
+  trait: { kind: TraitKind; name: string; text: string };
   signature: { name: string; cost: number; text: string; effects: Effect[] };
-  starterDeck: string[]; // card ids (24)
+  /** Card ids per Age tier, per deck (duplicates = copies). */
+  decks: Record<Family, [string[], string[], string[], string[], string[]]>;
 }
 
 // ---------------------------------------------------------------- state
@@ -119,36 +123,37 @@ export interface BuildingInst {
   cardId: string;
   damage: number;
   bonusIntegrity: number;
-  unrest: number; // turns remaining (counts down at owner's turn start)
+  unrest: number;
 }
 
 export interface UnitInst {
   uid: string;
   cardId: string;
   damage: number;
-  ready: boolean; // can attack this turn
+  ready: boolean;
   attacked: boolean;
-  blocked: boolean; // has blocked during the current opponent turn
-  buff: number; // temporary strength until end of turn
+  blocked: boolean;
+  buff: number;
 }
 
 export interface PlayerState {
   id: PlayerId;
   name: string;
   civ: CivId;
+  age: Age;
+  progress: number; // toward the next Age (or the Golden Age at Age V)
+  prosperity: number;
   stability: number;
-  legacy: number;
-  goods: number;
-  food: number;
   momentum: number;
-  deck: CardInst[];
+  piles: Record<Family, CardInst[]>; // face-down draw piles
+  discards: Record<Family, CardInst[]>;
   hand: CardInst[];
-  discard: CardInst[];
-  buildings: BuildingInst[];
+  buildings: BuildingInst[]; // includes forts
   units: UnitInst[];
-  signatureUsed: boolean; // once per turn
-  lastSuit: Suit | null; // suit of the last card played this turn (chains)
-  handRevealedTo: boolean; // opponent may see this hand until end of turn
+  signatureUsed: boolean;
+  handRevealedTo: boolean;
+  /** Sumer's scribes: top card of each pile, visible to the owner while drafting. */
+  peek: Record<Family, string | null> | null;
 }
 
 export type AttackTarget = { kind: 'city' } | { kind: 'building'; uid: string };
@@ -169,13 +174,13 @@ export interface PendingAction {
 
 export type Pending = PendingAttack | PendingAction;
 
-export type Phase = 'main' | 'response' | 'over';
+export type Phase = 'draft' | 'main' | 'response' | 'over';
 
 export interface GameState {
-  version: 1;
+  version: 2;
   seed: number;
   rng: number;
-  turn: number; // increments every player-turn, starting at 1
+  turn: number;
   active: PlayerId;
   phase: Phase;
   pending: Pending | null;
@@ -195,10 +200,10 @@ export interface LogEntry {
 // ---------------------------------------------------------------- actions
 
 export type Action =
+  | { type: 'draft'; civ: number; mil: number; discard?: string[] }
   | { type: 'play'; uid: string; targetUid?: string }
   | { type: 'attack'; unitUids: string[]; target: AttackTarget }
   | { type: 'signature'; targetUid?: string }
-  | { type: 'rally' } // spend 2 momentum: draw a card
   | { type: 'respond'; reactionUid?: string; blockerUids: string[] }
   | { type: 'endTurn' }
   | { type: 'concede' };
@@ -206,17 +211,17 @@ export type Action =
 /** Presentation events emitted by the engine so clients can animate what happened. */
 export type GameEvent =
   | { type: 'turnStart'; player: PlayerId; turn: number }
-  | { type: 'income'; player: PlayerId; goods: number; food: number; legacy: number }
-  | { type: 'famine'; player: PlayerId }
-  | { type: 'draw'; player: PlayerId; n: number }
+  | { type: 'income'; player: PlayerId; prosperity: number; growth: number; upkeep: number }
+  | { type: 'drafted'; player: PlayerId; civ: number; mil: number; discarded: number }
   | { type: 'cardPlayed'; player: PlayerId; cardId: string }
-  | { type: 'chain'; player: PlayerId; suit: Suit }
+  | { type: 'grow'; player: PlayerId; cardId: string; progress: number }
+  | { type: 'ageUp'; player: PlayerId; age: Age; name: string }
   | { type: 'buildingRaised'; player: PlayerId; uid: string; cardId: string }
   | { type: 'buildingDamaged'; player: PlayerId; uid: string; amount: number }
-  | { type: 'buildingDestroyed'; player: PlayerId; uid: string; cardId: string }
+  | { type: 'buildingDestroyed'; player: PlayerId; uid: string; cardId: string; progressLost: number }
   | { type: 'buildingUnrest'; player: PlayerId; uid: string }
   | { type: 'supportLost'; player: PlayerId; uid: string }
-  | { type: 'unitRecruited'; player: PlayerId; uid: string; cardId: string }
+  | { type: 'unitDeployed'; player: PlayerId; uid: string; cardId: string }
   | { type: 'unitDestroyed'; player: PlayerId; uid: string; cardId: string }
   | { type: 'unitDeserted'; player: PlayerId; uid: string; cardId: string }
   | { type: 'attackDeclared'; player: PlayerId; unitUids: string[]; target: AttackTarget }
@@ -224,12 +229,12 @@ export type GameEvent =
   | { type: 'reversed'; player: PlayerId; cardId: string }
   | {
       type: 'combat'; attacker: PlayerId; power: number; blocked: number; wallAbsorbed: number; dealt: number;
-      // Detail for presentation (hologram battle scenes):
       attackerCards: string[]; blockerCards: string[]; attackersLost: number; blockersLost: number;
-      target: string; // 'city' or the target building's card id
-      wallCard: string | null; reaction: ReactionKind | null; cancelled: boolean; tideBack: number; targetDestroyed: boolean;
+      target: string; wallCard: string | null; reaction: ReactionKind | null; cancelled: boolean; tideBack: number;
+      targetDestroyed: boolean; towerHits: number; progressRaided: number;
     }
   | { type: 'scheme'; caster: PlayerId; cardId: string; targetCardId: string | null; outcome: 'hit' | 'foiled' | 'mirrored'; mirrorTargetCardId: string | null }
+  | { type: 'tactic'; player: PlayerId; cardId: string } // non-hostile military card (buffs, draws)
   | { type: 'cityDamaged'; player: PlayerId; amount: number }
   | { type: 'resource'; player: PlayerId; res: Resource; delta: number }
   | { type: 'signature'; player: PlayerId; name: string }

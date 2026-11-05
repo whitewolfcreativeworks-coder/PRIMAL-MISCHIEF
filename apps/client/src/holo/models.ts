@@ -52,11 +52,23 @@ class Builder {
     if (!parent) this.parts.push(l);
     return l;
   }
+  private extra: (() => void)[] = [];
+  /** Absorb another model: it shares this model's material (so it reveals and fades together) and is disposed with it. */
+  adopt(m: HoloModel) {
+    m.group.traverse((o) => {
+      const any = o as THREE.Mesh & THREE.Line;
+      if (any.isMesh) any.material = this.mat;
+      else if (any.isLine) any.material = this.line;
+    });
+    this.extra.push(m.dispose);
+    this.group.add(m.group);
+    this.parts.push(m.group);
+  }
   done(kind: HoloModel['kind']): HoloModel {
     const box = new THREE.Box3().setFromObject(this.group);
     return {
       group: this.group, uniforms: this.mat.uniforms, parts: this.parts, height: Math.max(0.1, box.max.y), kind,
-      dispose: () => { this.geoms.forEach((g) => g.dispose()); this.mat.dispose(); this.line.dispose(); },
+      dispose: () => { this.geoms.forEach((g) => g.dispose()); this.extra.forEach((d) => d()); this.mat.dispose(); this.line.dispose(); },
     };
   }
 }
@@ -266,6 +278,41 @@ const BUILDING_ARCH: Record<string, string> = {
 export const CIV_MONUMENT: Record<string, string> = {
   kush: 'kush_pyramid', aksum: 'aksum_stele', carthage: 'carth_cothon', sumer: 'sumer_ziggurat', inca: 'inca_terraces',
 };
+
+/** A whole settlement for a civilization at a given Age: it visibly grows from huts to a monumental capital. */
+export function cityModel(civ: string, age: number, color: THREE.ColorRepresentation): HoloModel {
+  const b = new Builder(color);
+  let seed = civ.length * 97 + age * 13;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // Dwellings: more, taller and tighter with each Age.
+  const n = 4 + age * 3;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rnd() * 0.4;
+    const r = 0.22 + rnd() * (0.18 + age * 0.03);
+    const h = 0.05 + rnd() * 0.04 + age * 0.018;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r * 0.75;
+    if (age === 1 && civ !== 'inca') { b.add(new THREE.ConeGeometry(0.045, 0.08, 7), [x, 0.04, z]); continue; } // huts and tents
+    b.add(box(0.07 + rnd() * 0.03, h, 0.07), [x, h / 2, z]);
+  }
+  if (age >= 2) { // walls or palisade ring
+    const ring = new THREE.TorusGeometry(0.5 + age * 0.03, age >= 3 ? 0.03 : 0.015, 4, 40);
+    b.add(ring, [0, 0.02, 0], [Math.PI / 2, 0, 0]);
+  }
+  if (age >= 3) { // a temple or palace at the heart of the city
+    b.add(box(0.2, 0.12, 0.14), [0.0, 0.06, 0.12]);
+    b.add(pyr(0.14, 0.07), [0.0, 0.155, 0.12], [0, Math.PI / 4, 0]);
+  }
+  if (age >= 4) { // the civilization's signature monument
+    const mon = buildingModel(BUILDING_ARCH[CIV_MONUMENT[civ]] ?? 'temple', color);
+    mon.group.scale.setScalar(age === 5 ? 0.62 : 0.45);
+    mon.group.position.set(0, 0, -0.18);
+    b.adopt(mon);
+  }
+  if (age === 5) { // golden age banners
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; b.line3([[Math.cos(a) * 0.6, 0, Math.sin(a) * 0.45], [Math.cos(a) * 0.6, 0.32, Math.sin(a) * 0.45]]); }
+  }
+  return b.done('building');
+}
 
 export function modelFor(cardId: string, color: THREE.ColorRepresentation, kind: 'unit' | 'building'): HoloModel {
   return kind === 'unit' ? unitModel(UNIT_ARCH[cardId] ?? 'infantry', color) : buildingModel(BUILDING_ARCH[cardId] ?? 'hall', color);

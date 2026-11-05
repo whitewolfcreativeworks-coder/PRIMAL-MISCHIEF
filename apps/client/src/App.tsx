@@ -5,7 +5,7 @@ import { LESSONS } from './game/lessons';
 import type { Lesson } from './game/tutorial';
 import { Board } from './ui/Board';
 import { HowToPlay } from './ui/HowToPlay';
-import { Academy, DeckBuilder, loadDeck, LocalSetup, Lobby, markLessonDone, Title, WaitingRoom } from './ui/Menu';
+import { Academy, Codex, LocalSetup, Lobby, markLessonDone, Title, WaitingRoom } from './ui/Menu';
 
 type Screen = 'title' | 'local' | 'online' | 'deck' | 'match' | 'academy';
 
@@ -46,7 +46,7 @@ export function App() {
     match?.dispose();
     setMatch(new LocalMatch({
       seed: Math.floor(Math.random() * 2 ** 31), difficulty: opts.difficulty, pace,
-      human: { name: ruler, civ, deck: loadDeck(civ) },
+      human: { name: ruler, civ },
       ai: { name: CIVS.find((c) => c.id === aiCiv)!.name.replace('Kingdom of ', ''), civ: aiCiv },
     }));
     setScreen('match');
@@ -57,8 +57,8 @@ export function App() {
     store('pm.server', serverUrl);
     match?.dispose();
     const m = new OnlineMatch(serverUrl, kind === 'create'
-      ? { kind: 'create', name: ruler, civ, deck: loadDeck(civ) }
-      : { kind: 'join', code: code!, name: ruler, civ, deck: loadDeck(civ) });
+      ? { kind: 'create', name: ruler, civ }
+      : { kind: 'join', code: code!, name: ruler, civ });
     setMatch(m);
     setScreen('match');
     if (inviteCode) history.replaceState(null, '', location.pathname);
@@ -107,7 +107,7 @@ export function App() {
   } else if (screen === 'academy') {
     body = <Academy lessons={LESSONS} onStart={startLesson} onBack={() => setScreen('title')} />;
   } else if (screen === 'deck') {
-    body = <DeckBuilder civ={deckCiv} onDone={() => setScreen(back)} />;
+    body = <Codex civ={deckCiv} onDone={() => setScreen(back)} />;
   } else {
     body = (
       <>

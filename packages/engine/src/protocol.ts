@@ -2,8 +2,8 @@
 import type { Action, CivId, GameEvent, GameState, PlayerId } from './types';
 
 export type ClientMsg =
-  | { t: 'create'; name: string; civ: CivId; deck?: string[] }
-  | { t: 'join'; code: string; name: string; civ: CivId; deck?: string[] }
+  | { t: 'create'; name: string; civ: CivId }
+  | { t: 'join'; code: string; name: string; civ: CivId }
   | { t: 'resume'; code: string; token: string }
   | { t: 'action'; seq: number; action: Action }
   | { t: 'leave' }

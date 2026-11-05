@@ -2,33 +2,33 @@ import { getCard, getCiv, type CivId } from '@pm/engine';
 import type { ReactNode } from 'react';
 import { HoloPreview } from '../holo/HoloStage';
 import { CardFace } from './Card';
-import { Icon, SUIT_LABEL } from './icons';
+import { FAMILY_LABEL, Icon, ROMAN } from './icons';
 
 /** Plain-language explanations of the terms that appear on cards. */
 const GLOSSARY: [RegExp, string, string][] = [
-  [/Hostile/, 'Hostile', 'Targets your rival. They get one chance to react — Vigilant Watch cancels it, Mirror the Scheme turns it back on you.'],
-  [/Reaction to an attack/, 'Reaction (attack)', 'Played during your rival’s turn when they attack you, together with your choice of blockers. One reaction per attack.'],
-  [/Reaction to a Hostile/, 'Reaction (scheme)', 'Played during your rival’s turn when they target you with a Hostile card.'],
-  [/Chain/, 'Chain', 'If the card you played just before this one has the named suit, you also get the Chain bonus. Any two cards of the same suit in a row earn +1 Momentum.'],
-  [/Unrest/, 'Unrest', 'The building stops working for a number of its owner’s turns — and so does anything that depends on it.'],
-  [/Wall:/, 'Wall', 'Damage that gets past your blockers hits the walls before it reaches the city or the targeted building.'],
+  [/Hostile/, 'Hostile', 'Targets your rival. They get one chance to react: Vigilant Watch cancels it, Mirror the Scheme turns it back on you.'],
+  [/Reaction to an attack/, 'Reaction (attack)', 'Played on your rival’s turn when they cross the river at you, together with your choice of blockers. One reaction per attack.'],
+  [/Reaction to a Hostile/, 'Reaction (scheme)', 'Played on your rival’s turn when they target you with a Hostile card.'],
+  [/Unrest/, 'Unrest', 'The building stops working for a number of its owner’s turns, and so does anything that depends on it.'],
+  [/Wall:|Wall\./, 'Wall', 'Damage that gets past your blockers hits the walls before it reaches the city or the targeted building.'],
+  [/Tower/, 'Tower', 'Deals 1 damage to every attacking unit as it crosses the river, before the fight.'],
   [/Ranged/, 'Ranged', '+1 Strength while blocking.'],
   [/Siege/, 'Siege', '+2 Strength when attacking a building, or a city protected by walls.'],
-  [/Swift|may attack the turn/, 'Swift', 'Can attack on the turn it is played. Normally units must wait a turn.'],
-  [/Raider/, 'Raider', 'When the attack gets through to its target, steal 2 Goods from your rival.'],
-  [/Wage/, 'Wage', 'Costs Goods at the start of each of your turns. If you can’t pay, the unit deserts.'],
-  [/Upkeep/, 'Upkeep', 'Food eaten each turn. If your Food runs out you suffer famine: −2 Stability and a unit deserts.'],
+  [/Swift|attack the turn/, 'Swift', 'Can cross the river on the turn it is deployed. Normally units must wait a turn.'],
+  [/Raider/, 'Raider', 'When the attack gets through, your rival loses 2 Progress.'],
+  [/Upkeep/, 'Upkeep', 'Prosperity this unit costs at the start of each of your turns. Units you cannot pay desert.'],
   [/Requires/, 'Requires', 'Only works while you have a working building of that kind. Lose it and this stops too.'],
-  [/Wonder/, 'Wonder', 'A great monument: only one copy per deck, and a big Legacy engine.'],
-  [/Legacy/, 'Legacy', `Reach 20 Legacy to win without conquest.`],
-  [/Harbor/, 'Harbor', 'Supports Markets and lets you launch fleets.'],
-  [/Famine/, 'Famine', 'Running out of Food costs 2 Stability and your hungriest unit.'],
+  [/Wonder/, 'Wonder', 'A great monument of the fifth Age: one copy, a big Progress engine.'],
+  [/Harbor/, 'Harbor', 'Supports Markets and launches fleets.'],
+  [/Progress/, 'Progress', 'Fills your Age bar. A full bar advances your civilization to its next Age; completing Age V is a Golden Age victory.'],
+  [/Prosperity/, 'Prosperity', 'Your civilization’s wealth: earned every turn, spent to play cards and to pay your army’s upkeep.'],
 ];
 
 export function Inspector({ cardId, civ, cost, note, children }: { cardId: string; civ?: CivId; cost?: number; note?: ReactNode; children?: ReactNode }) {
   const card = getCard(cardId);
-  const text = `${card.text} ${card.chain?.text ?? ''}`;
+  const text = card.text;
   const terms = GLOSSARY.filter(([re]) => re.test(text));
+  if (card.family === 'civ' && !terms.some(([, t]) => t === 'Progress')) terms.unshift([/./, 'Progress', 'Fills your Age bar. A full bar advances your civilization to its next Age; completing Age V is a Golden Age victory.']);
   if (card.kind === 'unit') terms.unshift([/./, 'Strength and Health', 'Strength is the damage this unit deals in combat; Health is how much it can take before it falls. Damage heals at the end of each turn.']);
   if (card.kind === 'building') terms.unshift([/./, 'Integrity', 'How much damage the building can take. Each building you lose also costs 1 Stability.']);
   return (
@@ -37,8 +37,8 @@ export function Inspector({ cardId, civ, cost, note, children }: { cardId: strin
       <div className="insp-side">
         <HoloPreview cardId={cardId} />
         <div className="insp-meta">
-          <span><Icon name={card.suit} size={14} /> {SUIT_LABEL[card.suit]}</span>
-          <span>{card.kind === 'building' ? 'Building' : card.kind === 'unit' ? 'Unit' : card.kind === 'reaction' ? 'Reaction' : 'Action'}</span>
+          <span><Icon name={card.family} size={14} /> {FAMILY_LABEL[card.family]} deck · Age {ROMAN[card.age - 1]}</span>
+          <span>{{ building: 'Building', development: 'Development', unit: 'Unit', fort: 'Fortification', tactic: 'Tactic', reaction: 'Reaction' }[card.kind]}</span>
           {card.civ && <span>{getCiv(card.civ).name}</span>}
         </div>
         {note && <p className="insp-note">{note}</p>}

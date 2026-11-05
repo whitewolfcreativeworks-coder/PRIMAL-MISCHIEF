@@ -15,6 +15,7 @@ primal-mischief/
 │   ├── src/game/match.ts   LocalMatch (vs AI, in-browser) and OnlineMatch (WebSocket)
 │   ├── src/ui/             Board, cards, menus, deck builder, lobby
 │   ├── src/art/motifs.tsx  Procedural SVG card art and civ emblems (original)
+│   ├── src/art/skyline.tsx Procedural riverbank skylines per civilization and Age
 │   ├── src/holo/           Three.js hologram theater: shader, miniatures, scenes
 │   ├── src/game/tutorial.ts, lessons.ts  Academy lesson framework + lessons
 │   └── src/audio.ts        Synthesized Web Audio cues (no audio assets)
@@ -139,7 +140,11 @@ hidden information.
   walls, terraces, harbors…). Built from primitives so they can shatter.
 - `holo/theater.ts` — renderer, projector disc and light cone, particles,
   floating labels, a scene queue (max 3 pending, so it keeps up).
-- `holo/vignettes.ts` — scripted scenes: battles staged differently for
+- `holo/vignettes.ts` — scenes staged across a hologram river (you attack
+  away from the viewer, the rival attacks toward you): every Civilization card
+  shows your city at its Age with the new work rising; a new Age shows the old
+  settlement giving way to the next; deployments march to the riverbank;
+  battles staged differently for
   each reaction (Ambush, Shield Wall, Feigned Retreat, Turn the Tide),
   schemes including the Mirror reversal, construction, collapse,
   signatures, victory, and per-card looping previews for the close-up.
@@ -153,3 +158,12 @@ hidden information.
 (info) or ask for one move (do), scripted rival moves, and a `solution` per
 step. `apps/client/test/lessons.test.ts` plays every lesson through its
 solutions and checks off-script moves are refused.
+
+## v0.3 rules model
+
+Game state now tracks, per player: `age`, `progress`, `prosperity`,
+`stability`, `momentum`, two face-down `piles` and two `discards` (one per
+deck), and Sumer’s `peek`. A turn has a `draft` phase before `main`. Decks are
+defined per civilization as five Age tiers per deck (`CivDef.decks`); entering
+an Age rebuilds both piles from the live tiers. `validateData()` checks every
+tier on startup in tests.

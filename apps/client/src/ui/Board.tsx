@@ -1,17 +1,18 @@
 import {
-  actingPlayer, availableBlockers, canPlayCard, costOf, getCard, getCiv, HIDDEN_CARD, incomeOf, isWorking, maxIntegrity, other,
-  playableReactions, readyAttackers, RULES, unitMaxHp, unitStr, workingBuildings,
+  actingPlayer, ageName, availableBlockers, canPlayCard, costOf, draftNeeded, getCard, getCiv, HIDDEN_CARD, incomeOf, isWorking,
+  maxIntegrity, other, playableReactions, progressNeeded, readyAttackers, RULES, unitMaxHp, unitStr, workingBuildings,
   type BuildingInst, type GameEvent, type GameState, type PlayerId, type PlayerState, type UnitInst,
 } from '@pm/engine';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { CardArt, CivEmblem } from '../art/motifs';
+import { Skyline } from '../art/skyline';
 import { isMuted, play, setMuted } from '../audio';
 import { LocalMatch, TutorialMatch, type AnyMatch } from '../game/match';
 import type { Highlight } from '../game/tutorial';
 import { HoloStage } from '../holo/HoloStage';
 import { CardBack, CardFace, paletteFor } from './Card';
-import { Icon } from './icons';
 import { HowToPlay } from './HowToPlay';
+import { FAMILY_LABEL, Icon, ROMAN } from './icons';
 import { Inspector } from './Inspector';
 
 type Fx = Record<string, string>;
@@ -31,7 +32,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const [reaction, setReaction] = useState<string | null>(null);
   const [inspect, setInspect] = useState<{ cardId: string; owner: PlayerId; note?: string } | null>(null);
   const [showLog, setShowLog] = useState(false);
-  const [showHelp, setShowHelp] = useState(() => { if (match instanceof TutorialMatch) return false; try { return !localStorage.getItem('pm.seenHelp'); } catch { return false; } });
+  const [showHelp, setShowHelp] = useState(() => { if (match instanceof TutorialMatch) return false; try { return !localStorage.getItem('pm.seenHelp2'); } catch { return false; } });
   const [confirmSig, setConfirmSig] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [fx, setFx] = useState<Fx>({});
@@ -40,6 +41,8 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const [floaters, setFloaters] = useState<Floater[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [shake, setShake] = useState<PlayerId | null>(null);
+  const [draftCiv, setDraftCiv] = useState(3);
+  const [discards, setDiscards] = useState<string[]>([]);
   const counter = useRef(0);
   const holoBusy = useRef(false);
   useEffect(() => { if (match instanceof LocalMatch || match instanceof TutorialMatch) match.setGate(() => holoBusy.current); }, [match]);
@@ -52,18 +55,26 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const me = snap.me;
   const opp = other(me);
   const acting = view ? actingPlayer(view) : null;
+  const drafting = !!view && view.phase === 'draft' && acting === me;
   const myMain = !!view && view.phase === 'main' && acting === me;
   const responding = !!view && view.phase === 'response' && acting === me;
   const pendingKey = view?.pending ? JSON.stringify(view.pending) : '';
 
-  // Reset transient selections whenever the situation changes.
   useEffect(() => { setBlockers([]); setReaction(null); }, [pendingKey]);
   useEffect(() => { if (!myMain) { setAttackers([]); setTargeting(null); setSelected(null); } }, [myMain]);
+  // A fresh draft each turn: suggest a split based on what is already in hand.
+  useEffect(() => {
+    if (!drafting || !view) return;
+    setDiscards([]);
+    const P = view.players[me];
+    const need = draftNeeded(P);
+    const milInHand = P.hand.filter((c) => getCard(c.cardId).family === 'mil').length;
+    setDraftCiv(Math.max(0, Math.min(need, Math.round((RULES.handSize / 2 - (P.hand.length - milInHand)) + (need - (RULES.handSize / 2 - milInHand) - (RULES.handSize / 2 - (P.hand.length - milInHand))) / 2))));
+  }, [drafting, view?.turn]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rule errors -> toast
   useEffect(() => { if (snap.error) { setToast(snap.error); play('tap'); const t = setTimeout(() => setToast(null), 2600); return () => clearTimeout(t); } }, [snap.errorSeq]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Presentation: turn engine events into animations and sound.
+  // Presentation: engine events -> board animation and sound (the hologram theater handles the big moments).
   useEffect(() => {
     if (!view) return;
     const nextFx: Fx = {};
@@ -72,29 +83,32 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     let ban: Banner | null = null;
     const sounds = new Set<Parameters<typeof play>[0]>();
     const add = (target: string, text: string, tone: string) => floats.push({ key: ++counter.current, target, text, tone });
+    const who = (p: PlayerId) => (p === me ? 'me' : 'opp');
     for (const e of snap.events as GameEvent[]) {
       switch (e.type) {
         case 'buildingRaised': nextFx[e.uid] = 'fx-rise'; sounds.add('build'); break;
-        case 'unitRecruited': nextFx[e.uid] = 'fx-arrive'; sounds.add('card'); break;
+        case 'unitDeployed': nextFx[e.uid] = 'fx-arrive'; sounds.add('card'); break;
         case 'buildingDamaged': nextFx[e.uid] = 'fx-hit'; add(e.uid, `−${e.amount}`, 'red'); sounds.add('clash'); break;
-        case 'buildingDestroyed': newGhosts.push({ key: `g${++counter.current}`, owner: e.player, cardId: e.cardId, kind: 'building' }); sounds.add('collapse'); break;
+        case 'buildingDestroyed': newGhosts.push({ key: `g${++counter.current}`, owner: e.player, cardId: e.cardId, kind: 'building' }); sounds.add('collapse');
+          if (e.progressLost) add(who(e.player), `−${e.progressLost} Progress`, 'red');
+          break;
         case 'unitDestroyed': case 'unitDeserted':
           newGhosts.push({ key: `g${++counter.current}`, owner: e.player, cardId: e.cardId, kind: 'unit' });
-          if (e.type === 'unitDeserted') add(e.player === me ? 'me' : 'opp', 'Deserted', 'red');
+          if (e.type === 'unitDeserted') add(who(e.player), 'Deserted — unpaid', 'red');
           break;
         case 'buildingUnrest': nextFx[e.uid] = 'fx-unrest'; break;
         case 'supportLost': nextFx[e.uid] = 'fx-crack'; break;
         case 'attackDeclared': for (const u of e.unitUids) nextFx[u] = 'fx-charge'; sounds.add('march');
-          if (e.player !== me) ban = { key: ++counter.current, text: 'Under attack', sub: e.target.kind === 'city' ? 'Your city is the target' : 'A building is the target', tone: 'red' };
+          if (e.player !== me) ban = { key: ++counter.current, text: 'Across the river!', sub: e.target.kind === 'city' ? 'They are coming for your city' : 'They are coming for a building', tone: 'red' };
           break;
         case 'combat': if (e.power) sounds.add('clash'); break;
-        case 'cityDamaged': add(e.player === me ? 'me' : 'opp', `−${e.amount}`, 'red'); setShake(e.player); setTimeout(() => setShake(null), 500); break;
-        case 'reaction': if (pace > 0) { sounds.add('reaction'); break; } ban = { key: ++counter.current, text: getCard(e.cardId).name, sub: e.player === me ? 'Your reaction' : `${view.players[e.player].name} reacts!`, tone: 'violet' }; sounds.add('reaction'); break;
-        case 'reversed': if (pace > 0) break; ban = { key: ++counter.current, text: 'Reversed!', sub: `${getCard(e.cardId).name} strikes its caster`, tone: 'violet' }; sounds.add('reaction'); break;
-        case 'chain': add(e.player === me ? 'me' : 'opp', 'Chain +1', 'gold'); sounds.add('chain'); break;
-        case 'signature': if (pace > 0) { sounds.add('reaction'); break; } ban = { key: ++counter.current, text: e.name, sub: view.players[e.player].name, tone: 'gold' }; sounds.add('reaction'); break;
-        case 'resource': if (e.res === 'goods' && e.delta > 0 && e.player === me) sounds.add('coin'); break;
-        case 'famine': add(e.player === me ? 'me' : 'opp', 'Famine', 'red'); break;
+        case 'cityDamaged': add(who(e.player), `−${e.amount} Stability`, 'red'); setShake(e.player); setTimeout(() => setShake(null), 500); break;
+        case 'grow': add(who(e.player), `+${e.progress} Progress`, 'gold'); break;
+        case 'ageUp': sounds.add('victory'); if (pace === 0) ban = { key: ++counter.current, text: `Age ${ROMAN[e.age - 1]}`, sub: e.name, tone: 'gold' }; break;
+        case 'reaction': sounds.add('reaction'); if (pace === 0) ban = { key: ++counter.current, text: getCard(e.cardId).name, sub: e.player === me ? 'Your reaction' : `${view.players[e.player].name} reacts!`, tone: 'violet' }; break;
+        case 'signature': sounds.add('reaction'); if (pace === 0) ban = { key: ++counter.current, text: e.name, sub: view.players[e.player].name, tone: 'gold' }; break;
+        case 'resource': if (e.res === 'prosperity' && e.delta > 0 && e.player === me) sounds.add('coin'); break;
+        case 'drafted': if (e.player !== me) add('opp', `Picked ${e.civ} Civilization · ${e.mil} Military`, 'plain'); sounds.add('card'); break;
         case 'turnStart': if (!ban) ban = { key: ++counter.current, text: e.player === me ? 'Your turn' : `${view.players[e.player].name}'s turn`, tone: 'plain' }; sounds.add('turn'); break;
         case 'gameOver': sounds.add(e.winner === me ? 'victory' : 'defeat'); break;
       }
@@ -110,16 +124,16 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     }
     if (floats.length) {
       setFloaters((f) => [...f, ...floats]);
-      setTimeout(() => setFloaters((f) => f.filter((x) => !floats.includes(x))), sleepMs(pace, 1300));
+      setTimeout(() => setFloaters((f) => f.filter((x) => !floats.includes(x))), sleepMs(pace, 1600));
     }
-    if (ban && pace > 0) {
+    if (ban) {
       setBanner(ban);
       const k = ban.key;
-      setTimeout(() => setBanner((b) => (b?.key === k ? null : b)), sleepMs(pace, ban.tone === 'plain' ? 900 : 1500));
+      setTimeout(() => setBanner((b) => (b?.key === k ? null : b)), sleepMs(Math.max(pace, 0.6), ban.tone === 'plain' ? 900 : 1500));
     }
   }, [snap.eventSeq]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-pass a response window when there is literally nothing we could do.
+  // Auto-pass a response window when there is nothing at all we could do.
   useEffect(() => {
     if (!responding || !view || snap.coach) return;
     if (availableBlockers(view, me).length === 0 && playableReactions(view, me).length === 0) {
@@ -128,7 +142,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     }
   }, [responding, pendingKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!view) return <div className="center-note">Preparing the table…</div>;
+  if (!view) return <div className="center-note">Preparing the river…</div>;
 
   const P = view.players[me];
   const O = view.players[opp];
@@ -141,11 +155,14 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const canBlock = new Set(responding ? availableBlockers(view, me) : []);
   const reactable = new Set(responding ? playableReactions(view, me) : []);
   const attackPower = attackers.reduce((s, uid) => { const u = P.units.find((x) => x.uid === uid); return s + (u ? unitStr(P, u) : 0); }, 0);
+  const need = drafting ? draftNeeded(P, discards.length) : 0;
+  const civPick = Math.min(draftCiv, need);
 
   // ------------------------------------------------------------ interactions
   const send: AnyMatch['send'] = (a) => { play('tap'); match.send(a); };
 
   function tapHand(uid: string) {
+    if (drafting) { setDiscards((d) => (d.includes(uid) ? d.filter((x) => x !== uid) : [...d, uid])); play('tap'); return; }
     if (!myMain && !responding) { setSelected(uid); return; }
     if (responding) {
       if (reactable.has(uid)) setReaction((r) => (r === uid ? null : uid));
@@ -184,51 +201,39 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   }
 
   function tapUnit(owner: PlayerId, u: UnitInst) {
-    if (owner === me && myMain && ready.has(u.uid)) {
-      setAttackers((a) => (a.includes(u.uid) ? a.filter((x) => x !== u.uid) : [...a, u.uid]));
-      play('tap');
-      return;
-    }
-    if (owner === me && responding && canBlock.has(u.uid)) {
-      setBlockers((b) => (b.includes(u.uid) ? b.filter((x) => x !== u.uid) : [...b, u.uid]));
-      play('tap');
-      return;
-    }
+    if (owner === me && myMain && ready.has(u.uid)) { setAttackers((a) => (a.includes(u.uid) ? a.filter((x) => x !== u.uid) : [...a, u.uid])); play('tap'); return; }
+    if (owner === me && responding && canBlock.has(u.uid)) { setBlockers((b) => (b.includes(u.uid) ? b.filter((x) => x !== u.uid) : [...b, u.uid])); play('tap'); return; }
     const p = view!.players[owner];
-    setInspect({ cardId: u.cardId, owner, note: `Strength ${unitStr(p, u)} · Health ${unitMaxHp(p, u) - u.damage}/${unitMaxHp(p, u)}${u.attacked ? ' · Exhausted (attacked this turn, cannot block)' : ''}` });
+    setInspect({ cardId: u.cardId, owner, note: `Strength ${unitStr(p, u)} · Health ${unitMaxHp(p, u) - u.damage}/${unitMaxHp(p, u)}${u.attacked ? ' · Exhausted: attacked this turn, cannot block' : ''}` });
   }
 
-  function respond() {
-    send({ type: 'respond', blockerUids: blockers, reactionUid: reaction ?? undefined });
-  }
+  const respond = () => send({ type: 'respond', blockerUids: blockers, reactionUid: reaction ?? undefined });
+  const doDraft = () => send({ type: 'draft', civ: civPick, mil: need - civPick, discard: discards });
 
-  // ------------------------------------------------------------ render pieces
+  // ------------------------------------------------------------ render
   const rootStyle = {
     '--pace': String(pace === 0 ? 0.01 : pace),
     '--me-primary': civ.palette.primary, '--me-secondary': civ.palette.secondary,
     '--opp-primary': oppCiv.palette.primary, '--opp-secondary': oppCiv.palette.secondary,
   } as CSSProperties;
-
   const floatFor = (t: string) => floaters.filter((f) => f.target === t).map((f) => <span key={f.key} className={`floater tone-${f.tone}`}>{f.text}</span>);
 
   const renderBuildings = (owner: PlayerId) => {
     const p = view.players[owner];
     const w = workingBuildings(p);
-    const isTarget = (targeting && ((targetSpec === 'enemyBuilding' && owner === opp) || (targetSpec === 'ownBuilding' && owner === me)))
-      || (myMain && attackers.length > 0 && owner === opp);
+    const isTarget = (targeting && ((targetSpec === 'enemyBuilding' && owner === opp) || (targetSpec === 'ownBuilding' && owner === me))) || (myMain && attackers.length > 0 && owner === opp);
     const threatened = pending?.kind === 'attack' && pending.target.kind === 'building' ? pending.target.uid : pending?.kind === 'action' ? pending.targetUid : undefined;
     return (
       <div className="row buildings">
         {p.buildings.map((b) => (
-          <BuildingTile key={b.uid} glow={glowPiece('building', owner === me ? 'me' : 'opp', b.cardId)} b={b} p={p} working={w.has(b.uid)} fx={fx[b.uid]} targetable={!!isTarget} threatened={threatened === b.uid}
-            onTap={() => tapBuilding(owner, b)} floaters={floatFor(b.uid)} />
+          <BuildingTile key={b.uid} glow={glowPiece('building', owner === me ? 'me' : 'opp', b.cardId)} b={b} p={p} working={w.has(b.uid)} fx={fx[b.uid]}
+            targetable={!!isTarget} threatened={threatened === b.uid} onTap={() => tapBuilding(owner, b)} floaters={floatFor(b.uid)} />
         ))}
         {ghosts.filter((g) => g.owner === owner && g.kind === 'building').map((g) => <GhostTile key={g.key} cardId={g.cardId} />)}
-        {p.buildings.length === 0 && !ghosts.some((g) => g.owner === owner && g.kind === 'building') && <div className="row-empty">{owner === me ? 'Your city awaits its first building' : 'No buildings yet'}</div>}
+        {p.buildings.length === 0 && !ghosts.some((g) => g.owner === owner && g.kind === 'building') && <div className="row-empty">{owner === me ? 'Your bank awaits its first building' : 'An empty riverbank'}</div>}
       </div>
     );
   };
-
   const renderUnits = (owner: PlayerId) => {
     const p = view.players[owner];
     const attacking = pending?.kind === 'attack' ? pending.unitUids : [];
@@ -237,8 +242,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
         {p.units.map((u) => (
           <UnitToken key={u.uid} glow={glowPiece('unit', owner === me ? 'me' : 'opp', u.cardId)} u={u} p={p} fx={fx[u.uid]}
             canAttack={owner === me && ready.has(u.uid)} selected={attackers.includes(u.uid) || blockers.includes(u.uid)}
-            canBlock={owner === me && canBlock.has(u.uid)} attacking={attacking.includes(u.uid)}
-            onTap={() => tapUnit(owner, u)} />
+            canBlock={owner === me && canBlock.has(u.uid)} attacking={attacking.includes(u.uid)} onTap={() => tapUnit(owner, u)} />
         ))}
         {ghosts.filter((g) => g.owner === owner && g.kind === 'unit').map((g) => <div key={g.key} className="unit ghost"><CardArt motif={getCard(g.cardId).art} palette={paletteFor(getCard(g.cardId), view.players[owner].civ)} /></div>)}
       </div>
@@ -247,15 +251,17 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
 
   const status = (() => {
     if (view.phase === 'over') return view.winner === me ? 'Victory' : 'Defeat';
-    if (responding) return pending?.kind === 'attack' ? 'Defend!' : 'Counter the scheme?';
-    if (myMain) return targeting ? 'Choose a target' : attackers.length ? `Attack: ${attackPower} strength` : 'Your turn';
+    if (drafting) return 'Choose your cards';
+    if (responding) return pending?.kind === 'attack' ? 'Defend the riverbank!' : 'Counter the scheme?';
+    if (myMain) return targeting ? 'Choose a target' : attackers.length ? `Crossing with ${attackPower} strength` : 'Your turn';
+    if (view.phase === 'draft') return `${O.name} is choosing cards…`;
     if (view.phase === 'response') return `${O.name} is responding…`;
-    return `${O.name} is thinking…`;
+    return `${O.name} is moving…`;
   })();
 
   return (
-    <div className={`match ${myMain ? 'my-turn' : ''} ${responding ? 'responding' : ''}`} style={rootStyle}>
-      <PlayerBar p={O} view={view} isMe={false} active={view.active === opp} shake={shake === opp} floaters={floatFor('opp')}
+    <div className={`match river-match ${myMain ? 'my-turn' : ''} ${responding ? 'responding' : ''} ${drafting ? 'drafting' : ''}`} style={rootStyle}>
+      <PlayerBar p={O} isMe={false} active={view.active === opp} over={view.phase === 'over'} floaters={floatFor('opp')}
         extra={
           <div className="bar-tools">
             {snap.online && <span className={`net ${snap.opponentConnected && snap.status === 'live' ? 'ok' : 'warn'}`} title="Connection">
@@ -273,76 +279,89 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
           : <div key={c.uid} className="opp-revealed" style={{ '--i': i, '--n': O.hand.length } as CSSProperties} onClick={() => setInspect({ cardId: c.cardId, owner: opp, note: 'Revealed by your spies.' })}><CardFace cardId={c.cardId} civ={O.civ} /></div>)}
       </div>
 
-      <main className="table">
-        <HoloStage events={snap.events} eventSeq={snap.eventSeq} view={view} me={me} pace={pace} onBusy={(b) => { holoBusy.current = b; }} />
-        <section className={`side side-opp ${shake === opp ? 'shake' : ''}`}>
-          {renderBuildings(opp)}
-          {renderUnits(opp)}
-        </section>
-
-        <section className="midline">
-          <div className={`status ${responding ? 'alert' : ''}`}>{status}</div>
-          <div className="mid-actions">
-            {myMain && attackers.length > 0 && (
-              <>
-                <button className={`btn danger ${glowBtn('attackCity')}`} onClick={() => { send({ type: 'attack', unitUids: attackers, target: { kind: 'city' } }); setAttackers([]); }}>
-                  <Icon name="city" size={16} /> Attack city
-                </button>
-                <span className="hint">or tap an enemy building</span>
-                <button className="btn ghost" onClick={() => setAttackers([])}>Cancel</button>
-              </>
-            )}
-            {myMain && targeting && <><span className="hint">Tap a highlighted building</span><button className="btn ghost" onClick={() => setTargeting(null)}>Cancel</button></>}
-            {myMain && !attackers.length && !targeting && (
-              <>
-                {ready.size > 0 && <span className="hint">Tap your glowing units to attack</span>}
-                <button className={`btn sig ${glowBtn('signature')}`} disabled={P.signatureUsed || P.momentum < civ.signature.cost} onClick={() => setConfirmSig(true)}>
-                  <Icon name="momentum" size={15} /> {civ.signature.name} <small>{civ.signature.cost}</small>
-                </button>
-                <button className="btn ghost" disabled={P.momentum < RULES.rallyCost} onClick={() => send({ type: 'rally' })} title="Spend 2 Momentum to draw a card">
-                  Rally <small>{RULES.rallyCost}</small>
-                </button>
-                <button className={`btn primary ${glowBtn('endTurn')}`} onClick={() => send({ type: 'endTurn' })}>End turn</button>
-              </>
-            )}
-            {!myMain && !responding && view.phase !== 'over' && <span className="hint dots">Waiting</span>}
+      <main className="table river-table">
+        <section className={`bank bank-far ${shake === opp ? 'shake' : ''}`}>
+          <div className="skyline"><Skyline civ={O.civ} age={O.age} palette={oppCiv.palette} side="far" /></div>
+          <div className="bank-content">
+            {renderBuildings(opp)}
+            {renderUnits(opp)}
           </div>
         </section>
 
-        <section className={`side side-me ${shake === me ? 'shake' : ''}`}>
-          {renderUnits(me)}
-          {renderBuildings(me)}
+        <section className="river">
+          <div className="water" aria-hidden />
+          <div className="river-bar">
+            <div className={`status ${responding ? 'alert' : ''}`}>{status}</div>
+            <div className="mid-actions">
+              {myMain && attackers.length > 0 && (
+                <>
+                  <button className={`btn danger ${glowBtn('attackCity')}`} onClick={() => { send({ type: 'attack', unitUids: attackers, target: { kind: 'city' } }); setAttackers([]); }}>
+                    <Icon name="city" size={16} /> Attack their city
+                  </button>
+                  <span className="hint">or tap one of their buildings</span>
+                  <button className="btn ghost" onClick={() => setAttackers([])}>Cancel</button>
+                </>
+              )}
+              {myMain && targeting && <><span className="hint">Tap a highlighted building</span><button className="btn ghost" onClick={() => setTargeting(null)}>Cancel</button></>}
+              {myMain && !attackers.length && !targeting && (
+                <>
+                  {ready.size > 0 && <span className="hint">Tap your glowing units to cross the river</span>}
+                  <button className={`btn sig ${glowBtn('signature')}`} disabled={P.signatureUsed || P.momentum < civ.signature.cost} onClick={() => setConfirmSig(true)}>
+                    <Icon name="momentum" size={15} /> {civ.signature.name} <small>{civ.signature.cost}</small>
+                  </button>
+                  <button className={`btn primary ${glowBtn('endTurn')}`} onClick={() => send({ type: 'endTurn' })}>End turn</button>
+                </>
+              )}
+              {!myMain && !responding && !drafting && view.phase !== 'over' && <span className="hint dots">Waiting</span>}
+            </div>
+          </div>
         </section>
+
+        <section className={`bank bank-near ${shake === me ? 'shake' : ''}`}>
+          <div className="skyline"><Skyline civ={P.civ} age={P.age} palette={civ.palette} side="near" /></div>
+          <div className="bank-content">
+            {renderUnits(me)}
+            {renderBuildings(me)}
+          </div>
+        </section>
+
+        <HoloStage events={snap.events} eventSeq={snap.eventSeq} view={view} me={me} pace={pace} onBusy={(b) => { holoBusy.current = b; }} />
       </main>
 
-      <PlayerBar p={P} view={view} isMe active={view.active === me} shake={shake === me} floaters={floatFor('me')} />
+      <PlayerBar p={P} isMe active={view.active === me} over={view.phase === 'over'} floaters={floatFor('me')} />
 
-      <div className={`hand ${responding ? 'hand-respond' : ''}`}>
+      <div className={`hand ${responding ? 'hand-respond' : ''} ${drafting ? 'hand-draft' : ''}`}>
         {P.hand.map((c, i) => {
           const card = getCard(c.cardId);
-          const playable = myMain ? canPlayCard(view, me, c.uid) === null : responding ? reactable.has(c.uid) : false;
+          const playable = myMain ? canPlayCard(view, me, c.uid) === null : responding ? reactable.has(c.uid) : drafting;
           return (
-            <div key={c.uid} className={`hand-slot ${glowHand(c.cardId) ? 'coach-glow' : ''}`} style={{ '--i': i, '--n': P.hand.length } as CSSProperties}>
+            <div key={c.uid} className={`hand-slot ${glowHand(c.cardId) ? 'coach-glow' : ''} ${discards.includes(c.uid) ? 'to-discard' : ''}`} style={{ '--i': i, '--n': P.hand.length } as CSSProperties}>
               <CardFace cardId={c.cardId} civ={P.civ} cost={costOf(P, card)} disabled={!playable}
                 selected={selected === c.uid || reaction === c.uid || targeting === c.uid} onClick={() => tapHand(c.uid)} />
+              {drafting && discards.includes(c.uid) && <span className="discard-tag">Discard</span>}
             </div>
           );
         })}
+        {P.hand.length === 0 && !drafting && <div className="hand-empty">Your hand is empty. You refill it at the start of your turn.</div>}
       </div>
 
       {/* --------------------------------------------------- overlays */}
-      {responding && pending && (
-        <ResponsePanel glow={glowBtn('respond')} view={view} me={me} blockers={blockers} reaction={reaction} onRespond={respond}
-          onClearReaction={() => setReaction(null)} />
+      {drafting && (
+        <DraftPanel P={P} need={need} civPick={civPick} setCiv={(n) => { setDraftCiv(n); play('tap'); }} discards={discards.length}
+          onDraft={doDraft} glow={glowBtn('draft')} />
       )}
 
-      {selCard && (
+      {responding && pending && (
+        <ResponsePanel glow={glowBtn('respond')} view={view} me={me} blockers={blockers} reaction={reaction} onRespond={respond} onClearReaction={() => setReaction(null)} />
+      )}
+
+      {selCard && !drafting && (
         <Sheet onClose={() => setSelected(null)} wide>
           <Inspector cardId={selCard.cardId} civ={P.civ} cost={costOf(P, getCard(selCard.cardId))}
             note={myMain ? canPlayCard(view, me, selCard.uid) : getCard(selCard.cardId).kind === 'reaction' ? 'Reactions are played when your rival attacks or schemes against you.' : null}>
             {myMain && canPlayCard(view, me, selCard.uid) === null && (
               <button className="btn primary big" onClick={playSelected}>
-                {getCard(selCard.cardId).target && getCard(selCard.cardId).target !== 'none' ? 'Choose target' : 'Play'}
+                {getCard(selCard.cardId).target && getCard(selCard.cardId).target !== 'none' ? 'Choose target' : getCard(selCard.cardId).kind === 'unit' ? 'Deploy' : getCard(selCard.cardId).family === 'civ' ? 'Build' : 'Play'}
               </button>
             )}
             <button className="btn ghost big" onClick={() => setSelected(null)}>Close</button>
@@ -383,7 +402,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
         </Sheet>
       )}
 
-      {showHelp && <HowToPlay onClose={() => { setShowHelp(false); try { localStorage.setItem('pm.seenHelp', '1'); } catch { /* ignore */ } }} />}
+      {showHelp && <HowToPlay onClose={() => { setShowHelp(false); try { localStorage.setItem('pm.seenHelp2', '1'); } catch { /* ignore */ } }} />}
 
       {coach && match instanceof TutorialMatch && (
         <aside className={`coach mode-${coach.mode}`} aria-live="polite">
@@ -409,11 +428,11 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
             <h2>{view.winner === me ? 'Victory' : 'Defeat'}</h2>
             <p>{view.winReason}</p>
             <div className="go-stats">
-              {[P, O].map((p) => <div key={p.id}><b>{p.name}</b><span>Stability {p.stability} · Legacy {p.legacy}</span></div>)}
+              {[P, O].map((p) => <div key={p.id}><b>{p.name}</b><span>Age {ROMAN[p.age - 1]} · {ageName(p.civ, p.age)}</span><span>Stability {p.stability}</span></div>)}
             </div>
             <div className="sheet-actions">
               {onRematch && <button className="btn primary big" onClick={onRematch}>Play again</button>}
-              <button className="btn ghost" onClick={onExit}>Main menu</button>
+              <button className="btn ghost" onClick={onExit}>{match instanceof TutorialMatch ? 'Back to the Academy' : 'Main menu'}</button>
             </div>
           </div>
         </div>
@@ -424,42 +443,85 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
 
 // ================================================================ pieces
 
-function PlayerBar({ p, view, isMe, active, extra, shake, floaters }: { p: PlayerState; view: GameState; isMe: boolean; active: boolean; extra?: ReactNode; shake: boolean; floaters: ReactNode }) {
+function PlayerBar({ p, isMe, active, extra, floaters, over }: { p: PlayerState; isMe: boolean; active: boolean; extra?: ReactNode; floaters: ReactNode; over: boolean }) {
   const civ = getCiv(p.civ);
   const inc = incomeOf(p);
+  const needed = progressNeeded(p.age);
   const pct = (v: number, max: number) => `${Math.max(0, Math.min(100, (100 * v) / max))}%`;
   return (
-    <div className={`pbar ${isMe ? 'pbar-me' : 'pbar-opp'} ${active ? 'is-active' : ''} ${shake ? 'shake' : ''}`}>
+    <div className={`pbar ${isMe ? 'pbar-me' : 'pbar-opp'} ${active ? 'is-active' : ''}`}>
       <div className="pbar-id">
         <CivEmblem civ={p.civ} palette={civ.palette} size={isMe ? 44 : 38} />
         <div>
           <div className="pbar-name">{p.name}</div>
-          <div className="pbar-civ">{civ.name}</div>
+          <div className="pbar-civ" title={`${civ.trait.name}: ${civ.trait.text}`}>{civ.name}</div>
         </div>
       </div>
       <div className="pbar-stats">
-        <div className="meter stability" title="Stability — reach 0 and your civilization collapses">
+        <div className="age-meter" title={`Progress toward ${p.age === 5 ? 'the Golden Age' : `Age ${ROMAN[p.age]}`}`}>
+          <div className="age-label"><b>Age {ROMAN[p.age - 1]}</b><span>{ageName(p.civ, p.age)}</span></div>
+          <div className="age-track">
+            {[1, 2, 3, 4, 5].map((a) => <i key={a} className={a < p.age ? 'done' : a === p.age ? 'now' : ''} />)}
+          </div>
+          <div className="progress-bar"><i style={{ '--w': pct(p.progress, needed) } as CSSProperties} /><span>{p.progress}/{needed}{inc.growth ? ` · +${inc.growth}/turn` : ''}</span></div>
+        </div>
+        <div className="meter stability" title="Stability: if it reaches 0 your city falls">
           <Icon name="stability" size={15} /><b>{p.stability}</b>
           <i style={{ '--w': pct(p.stability, RULES.startingStability) } as CSSProperties} />
         </div>
-        <div className="meter legacy" title={`Legacy — reach ${RULES.legacyTarget} to win`}>
-          <Icon name="legacy" size={15} /><b>{p.legacy}</b><small>/{RULES.legacyTarget}</small>
-          {inc.legacy > 0 && <em>+{inc.legacy}</em>}
-          <i style={{ '--w': pct(p.legacy, RULES.legacyTarget) } as CSSProperties} />
+        <div className={`chip prosperity ${inc.net < 0 ? 'danger' : ''}`} title={`Prosperity: spent to play cards. Next turn +${inc.prosperity} income, −${inc.upkeep} army upkeep.`}>
+          <Icon name="prosperity" size={15} /><b>{p.prosperity}</b><em>{inc.net >= 0 ? '+' : ''}{inc.net}</em>
         </div>
-        <div className="chip goods" title="Goods — spent to play cards; income each turn"><Icon name="goods" size={15} /><b>{p.goods}</b><em>+{inc.goods}</em></div>
-        <div className={`chip food ${inc.netFood < 0 ? 'neg' : ''} ${p.food + inc.netFood < 0 ? 'danger' : ''}`} title="Food — farms feed your army; shortage causes famine">
-          <Icon name="food" size={15} /><b>{p.food}</b><em>{inc.netFood >= 0 ? '+' : ''}{inc.netFood}</em>
-        </div>
-        <div className="momentum" title="Momentum — earned by chains, successful attacks and reactions">
+        <div className="momentum" title="Momentum: from victories, reactions and new Ages; spend 3 on your Signature">
           {Array.from({ length: RULES.momentumCap }, (_, i) => <span key={i} className={i < p.momentum ? 'on' : ''} />)}
         </div>
-        <div className="chip small" title="Cards in deck"><Icon name="deck" size={13} />{p.deck.length}</div>
+        <div className="chip small piles" title="Cards left in the Civilization and Military decks">
+          <Icon name="civ" size={13} />{p.piles.civ.length}<Icon name="mil" size={13} />{p.piles.mil.length}
+        </div>
         {!isMe && <div className="chip small" title="Cards in hand"><Icon name="hand" size={13} />{p.hand.length}</div>}
       </div>
       {extra}
       <div className="floaters">{floaters}</div>
-      {view.phase !== 'over' && active && <div className="active-glow" />}
+      {!over && active && <div className="active-glow" />}
+    </div>
+  );
+}
+
+function DraftPanel({ P, need, civPick, setCiv, discards, onDraft, glow }: {
+  P: PlayerState; need: number; civPick: number; setCiv: (n: number) => void; discards: number; onDraft: () => void; glow: string;
+}) {
+  const milPick = need - civPick;
+  const pile = (fam: 'civ' | 'mil', count: number, left: number) => (
+    <button className={`draft-pile pile-${fam}`} onClick={() => setCiv(fam === 'civ' ? Math.min(need, civPick + 1) : Math.max(0, civPick - 1))} aria-label={`Take one more ${FAMILY_LABEL[fam]} card`}>
+      <div className="pile-stack">
+        {[0, 1, 2].map((i) => <CardBack key={i} civ={P.civ} family={fam} style={{ '--i': i } as CSSProperties} />)}
+        <b className="pile-count">{count}</b>
+      </div>
+      <div className="pile-label"><Icon name={fam} size={16} /> {FAMILY_LABEL[fam]}</div>
+      <div className="pile-sub">{fam === 'civ' ? 'Growth · buildings · Progress' : 'Units · forts · tactics · reactions'}</div>
+      <div className="pile-left">{left} in deck</div>
+      {P.peek && P.peek[fam] && <div className="pile-peek"><span>Scribes see</span><CardFace cardId={P.peek[fam]!} civ={P.civ} /></div>}
+    </button>
+  );
+  return (
+    <div className="draft-panel" role="dialog" aria-label="Choose your cards">
+      <div className="draft-title">Fill your hand <small>{need === 0 ? 'your hand is full' : `pick ${need}, face down`}</small></div>
+      <div className="draft-piles">
+        {pile('civ', civPick, P.piles.civ.length)}
+        <div className="draft-split">
+          <input type="range" min={0} max={need} value={civPick} onChange={(e) => setCiv(Number(e.target.value))} aria-label="Civilization cards to pick" disabled={need === 0} />
+          <div className="split-presets">
+            <button className="btn ghost small" onClick={() => setCiv(need)}>All growth</button>
+            <button className="btn ghost small" onClick={() => setCiv(Math.ceil(need / 2))}>Even</button>
+            <button className="btn ghost small" onClick={() => setCiv(0)}>All military</button>
+          </div>
+        </div>
+        {pile('mil', milPick, P.piles.mil.length)}
+      </div>
+      <div className="draft-foot">
+        <span className="hint">{discards ? `${discards} card${discards > 1 ? 's' : ''} marked to discard · ` : ''}Tap cards in your hand to discard them first.</span>
+        <button className={`btn primary big ${glow}`} onClick={onDraft}>{need === 0 ? 'Keep my hand' : `Draw ${civPick} + ${milPick}`}</button>
+      </div>
     </div>
   );
 }
@@ -473,7 +535,7 @@ function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floate
   const hp = maxI - b.damage;
   const state = b.unrest > 0 ? 'unrest' : working ? 'working' : 'unsupported';
   return (
-    <button className={`bld state-${state} ${glow ? 'coach-glow' : ''} ${fx ?? ''} ${targetable ? 'targetable' : ''} ${threatened ? 'threatened' : ''} rarity-${card.rarity ?? 'common'}`}
+    <button className={`bld fam-${card.family} state-${state} ${glow ? 'coach-glow' : ''} ${fx ?? ''} ${targetable ? 'targetable' : ''} ${threatened ? 'threatened' : ''} rarity-${card.rarity ?? 'common'}`}
       style={{ '--c-primary': pal.primary, '--c-secondary': pal.secondary, '--c-accent': pal.accent } as CSSProperties}
       onClick={onTap} aria-label={`${card.name}, integrity ${hp} of ${maxI}, ${state}`}>
       <div className="bld-plinth" />
@@ -481,10 +543,10 @@ function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floate
       <div className="bld-name">{card.name}</div>
       <div className="bld-bar"><i style={{ width: `${(100 * hp) / maxI}%` }} /></div>
       <div className="bld-out">
-        {card.goods ? <span><Icon name="goods" size={11} />{card.goods}</span> : null}
-        {card.food ? <span><Icon name="food" size={11} />{card.food}</span> : null}
-        {card.legacy ? <span><Icon name="legacy" size={11} />{card.legacy}</span> : null}
+        {card.income ? <span><Icon name="prosperity" size={11} />{card.income}</span> : null}
+        {card.growth ? <span><Icon name="growth" size={11} />{card.growth}</span> : null}
         {(card.passives ?? []).includes('wall') ? <span><Icon name="integrity" size={11} />wall</span> : null}
+        {(card.passives ?? []).includes('tower') ? <span><Icon name="str" size={11} />tower</span> : null}
       </div>
       {state === 'unrest' && <div className="bld-flag unrest"><Icon name="unrest" size={12} />{b.unrest}</div>}
       {state === 'unsupported' && <div className="bld-flag broken"><Icon name="broken" size={12} /></div>}
@@ -512,7 +574,7 @@ function UnitToken({ u, p, fx, canAttack, canBlock, selected, attacking, onTap, 
   const pal = paletteFor(card, p.civ);
   const hp = unitMaxHp(p, u) - u.damage;
   return (
-    <button className={`unit ${glow ? 'coach-glow' : ''} ${fx ?? ''} ${canAttack ? 'can-attack' : ''} ${canBlock ? 'can-block' : ''} ${selected ? 'is-selected' : ''} ${u.attacked ? 'exhausted' : ''} ${attacking ? 'attacking' : ''}`}
+    <button className={`unit ${glow ? 'coach-glow' : ''} ${fx ?? ''} ${canAttack ? 'can-attack' : ''} ${canBlock ? 'can-block' : ''} ${selected ? 'is-selected' : ''} ${u.attacked ? 'exhausted' : ''} ${attacking ? 'attacking' : ''} ${!u.ready ? 'not-ready' : ''}`}
       style={{ '--c-primary': pal.primary, '--c-secondary': pal.secondary } as CSSProperties}
       onClick={onTap} aria-label={`${card.name}, strength ${unitStr(p, u)}, health ${hp}`}>
       <div className="unit-art"><CardArt motif={card.art} palette={pal} /></div>
@@ -537,8 +599,8 @@ function ResponsePanel({ view, me, blockers, reaction, onRespond, onClearReactio
     const units = O.units.filter((u) => pending.unitUids.includes(u.uid));
     const power = units.reduce((s, u) => s + unitStr(O, u), 0);
     const tgt = pending.target.kind === 'city' ? 'your city' : getCard(P.buildings.find((b) => b.uid === (pending.target as { uid: string }).uid)?.cardId ?? 'farm').name;
-    title = `${O.name} attacks ${tgt}`;
-    detail = <>{units.length} unit{units.length > 1 ? 's' : ''}, <b>{power}</b> strength{units.some((u) => (getCard(u.cardId).keywords ?? []).includes('siege')) ? ' (+siege)' : ''}. Tap your units to block{reacts.length ? ', or pick a reaction card below' : ''}.</>;
+    title = `${O.name} crosses the river toward ${tgt}`;
+    detail = <>{units.length} unit{units.length > 1 ? 's' : ''}, <b>{power}</b> strength{units.some((u) => (getCard(u.cardId).keywords ?? []).includes('siege')) ? ' (+siege)' : ''}. Tap your units to block (they fight with +1 Strength on their own bank){reacts.length ? ', or pick a reaction card below' : ''}.</>;
   } else {
     const card = getCard(pending.card.cardId);
     const tgt = pending.targetUid ? P.buildings.find((b) => b.uid === pending.targetUid) : undefined;
@@ -566,4 +628,3 @@ function Sheet({ children, onClose, wide }: { children: ReactNode; onClose: () =
     </div>
   );
 }
-

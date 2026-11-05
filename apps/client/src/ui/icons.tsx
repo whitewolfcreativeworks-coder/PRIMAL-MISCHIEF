@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import type { Suit } from '@pm/engine';
+import type { Family } from '@pm/engine';
 
 // Small original glyphs for suits, resources and keywords. 24×24 grid, currentColor.
 
@@ -11,6 +11,14 @@ const P: Record<string, ReactElement> = {
   silk: <path d="M3 12c3-6 6 6 9 0s6 6 9 0M3 7c3-4 6 4 9 0s6 4 9 0M3 17c3-4 6 4 9 0s6 4 9 0" />,
   star: <path d="M12 2l2.4 6.6L21 9l-5 4.4L17.5 21 12 17l-5.5 4L8 13.4 3 9l6.6-.4L12 2z" />,
   shadow: <path d="M15 3a9 9 0 1 0 6 15A7 7 0 0 1 15 3zM9 11h.01" />,
+  // families
+  civ: <path d="M3 21h18M5 21V11M9 21V11M15 21V11M19 21V11M3 11l9-7 9 7H3z" />,
+  mil: <path d="M14.5 3L21 3v6.5L9 21l-6-6L14.5 3zM5 13l6 6M16 8l-4 4" />,
+  prosperity: <path d="M8 4h8M9 4c0 3-4 4-4 9a7 7 0 0 0 14 0c0-5-4-6-4-9M9 13h6" />,
+  progress: <path d="M3 20h4v-4h4v-4h4V8h4V4M15 4h4v4" />,
+  growth: <path d="M12 21V11M12 11c0-4 3-7 7-7 0 4-3 7-7 7zm0 3c0-3-2-5-5-5 0 3 2 5 5 5z" />,
+  upkeep: <path d="M12 3v18M7 8h7a3 3 0 0 1 0 6H8M5 21l3-3M19 21l-3-3" />,
+  river: <path d="M2 8c3-2 5 2 8 0s5 2 8 0 3 0 4 0M2 14c3-2 5 2 8 0s5 2 8 0 3 0 4 0" />,
   // resources
   goods: <path d="M8 4h8M9 4c0 3-4 4-4 9a7 7 0 0 0 14 0c0-5-4-6-4-9M9 13h6" />,
   food: <path d="M12 22V9M12 9c-3 0-5-2-5-5 3 0 5 2 5 5zm0 0c3 0 5-2 5-5-3 0-5 2-5 5zm0 6c-3 0-5-2-5-5 3 0 5 2 5 5zm0 0c3 0 5-2 5-5-3 0-5 2-5 5z" />,
@@ -43,10 +51,6 @@ export function Icon({ name, size = 16, className, title }: { name: string; size
   );
 }
 
-export const SUIT_LABEL: Record<Suit, string> = {
-  earth: 'Earth', stone: 'Stone', bronze: 'Bronze', silk: 'Silk', star: 'Star', shadow: 'Shadow',
-};
-
-export const SUIT_COLOR: Record<Suit, string> = {
-  earth: '#8fb35a', stone: '#b9ab94', bronze: '#d08a4a', silk: '#5fb3c9', star: '#e7c766', shadow: '#a58ad6',
-};
+export const FAMILY_LABEL: Record<Family, string> = { civ: 'Civilization', mil: 'Military' };
+export const FAMILY_COLOR: Record<Family, string> = { civ: '#e3c46f', mil: '#e07a5a' };
+export const ROMAN = ['I', 'II', 'III', 'IV', 'V'];

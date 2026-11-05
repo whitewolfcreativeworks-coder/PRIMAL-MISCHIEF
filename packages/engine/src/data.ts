@@ -1,26 +1,23 @@
-import { COMMON_CARDS } from './cards/common';
 import { CIV_CARDS, CIVS } from './cards/civs';
-import type { CardDef, CivDef, CivId } from './types';
+import { SHARED_CIV, SHARED_MIL } from './cards/shared';
+import type { Age, CardDef, CivDef, CivId } from './types';
 
 export const RULES = {
-  deckSize: 24,
-  defaultMaxCopies: 2,
-  startingHand: 5,
-  startingStability: 20,
-  legacyTarget: 20,
-  baseGoods: 3,
-  goodsCap: 15,
-  foodCap: 12,
-  startingFood: 2,
+  handSize: 6,
+  handLimit: 9, // effects that draw extra cards can go above the hand size, up to this
+  startingStability: 22,
+  /** Progress needed to leave each Age; at Age V it completes the Golden Age. */
+  progressToAdvance: [8, 10, 12, 14, 16] as readonly number[],
+  /** Base Prosperity each turn, by Age. */
+  baseIncome: [3, 4, 5, 6, 7] as readonly number[],
+  prosperityCap: 20,
   momentumCap: 5,
-  handLimit: 9,
-  maxBuildings: 7,
+  maxBuildings: 8, // buildings and forts on your bank
   maxUnits: 6,
-  rallyCost: 2,
-  turnLimit: 60, // total player-turns before the match is decided on points
+  turnLimit: 80, // player-turns before the match is decided on points
 } as const;
 
-export const ALL_CARDS: CardDef[] = [...COMMON_CARDS, ...CIV_CARDS];
+export const ALL_CARDS: CardDef[] = [...SHARED_CIV, ...SHARED_MIL, ...CIV_CARDS];
 const CARD_MAP = new Map(ALL_CARDS.map((c) => [c.id, c]));
 const CIV_MAP = new Map(CIVS.map((c) => [c.id, c]));
 
@@ -46,31 +43,42 @@ export function isCivId(id: unknown): id is CivId {
   return typeof id === 'string' && CIV_MAP.has(id as CivId);
 }
 
-/** Cards a given civilization may put in its deck. */
+export function ageName(civ: CivId, age: Age): string {
+  return getCiv(civ).ages[age - 1];
+}
+
+export function progressNeeded(age: Age): number {
+  return RULES.progressToAdvance[age - 1];
+}
+
+/** Every distinct card a civilization's decks can contain, in Age order. */
 export function cardPoolFor(civ: CivId): CardDef[] {
-  return ALL_CARDS.filter((c) => !c.token && (!c.civ || c.civ === civ));
+  const d = getCiv(civ).decks;
+  const ids = new Set([...d.civ.flat(), ...d.mil.flat()]);
+  return [...ids].map(getCard).sort((a, b) => a.age - b.age || (a.family === b.family ? 0 : a.family === 'civ' ? -1 : 1) || a.cost - b.cost);
 }
 
-export function maxCopies(card: CardDef): number {
-  return card.maxCopies ?? (card.rarity === 'wonder' ? 1 : RULES.defaultMaxCopies);
-}
-
-/** Returns a list of problems; empty means the deck is legal. */
-export function validateDeck(civ: CivId, cardIds: unknown): string[] {
-  const errors: string[] = [];
-  if (!Array.isArray(cardIds)) return ['Deck must be a list of card ids.'];
-  if (cardIds.length !== RULES.deckSize) errors.push(`Deck must contain exactly ${RULES.deckSize} cards (has ${cardIds.length}).`);
-  const counts = new Map<string, number>();
-  for (const id of cardIds) {
-    if (typeof id !== 'string' || !CARD_MAP.has(id)) { errors.push(`Unknown card: ${String(id)}`); continue; }
-    const c = CARD_MAP.get(id)!;
-    if (c.token) errors.push(`${c.name} cannot be included in a deck.`);
-    if (c.civ && c.civ !== civ) errors.push(`${c.name} belongs to another civilization.`);
-    counts.set(id, (counts.get(id) ?? 0) + 1);
+/** Problems with the card data (empty = fine). Used by tests and at startup in development. */
+export function validateData(): string[] {
+  const errs: string[] = [];
+  for (const civ of CIVS) {
+    for (const fam of ['civ', 'mil'] as const) {
+      civ.decks[fam].forEach((tier, i) => {
+        for (const id of tier) {
+          if (!CARD_MAP.has(id)) { errs.push(`${civ.id}: unknown card ${id}`); continue; }
+          const c = getCard(id);
+          if (c.family !== fam) errs.push(`${civ.id}: ${id} is not a ${fam} card`);
+          if (c.age > i + 1) errs.push(`${civ.id}: ${id} is Age ${c.age} but sits in tier ${i + 1}`); // older cards may be reprinted in later tiers
+          if (c.civ && c.civ !== civ.id) errs.push(`${civ.id}: ${id} belongs to ${c.civ}`);
+        }
+      });
+    }
   }
-  for (const [id, n] of counts) {
-    const c = CARD_MAP.get(id)!;
-    if (n > maxCopies(c)) errors.push(`Too many copies of ${c.name} (max ${maxCopies(c)}).`);
+  for (const c of ALL_CARDS) {
+    if (c.kind === 'unit' && (c.str === undefined || c.hp === undefined)) errs.push(`${c.id}: unit without stats`);
+    if ((c.kind === 'building' || c.kind === 'fort') && !c.integrity) errs.push(`${c.id}: no integrity`);
+    if (c.kind === 'reaction' && !c.reaction) errs.push(`${c.id}: reaction without kind`);
+    if (c.family === 'mil' && c.progress) errs.push(`${c.id}: military cards do not give Progress`);
   }
-  return errors;
+  return errs;
 }

@@ -15,7 +15,7 @@ export type Highlight =
   | { kind: 'hand'; cardId: string }
   | { kind: 'unit'; cardId: string; owner: 'me' | 'opp' }
   | { kind: 'building'; cardId: string; owner: 'me' | 'opp' }
-  | { kind: 'button'; name: 'endTurn' | 'signature' | 'attackCity' | 'respond' | 'rally' };
+  | { kind: 'button'; name: 'endTurn' | 'signature' | 'attackCity' | 'respond' | 'draft' };
 
 export interface Step {
   text: string;
@@ -88,8 +88,9 @@ export class TutorialRunner {
     this.state = createGame(7, [{ name: 'You', civ: lesson.civ }, { name: 'Rival', civ: lesson.opponent }], 0).state;
     // Start from a clean board: lessons place exactly what they need.
     this.api.edit((st) => {
-      for (const p of st.players) { p.hand = []; p.buildings = []; p.units = []; p.momentum = 0; p.stability = 20; p.legacy = 0; p.food = 6; }
-      st.players[0].goods = 6; st.players[1].goods = 6;
+      for (const p of st.players) { p.hand = []; p.buildings = []; p.units = []; p.momentum = 0; p.progress = 0; p.prosperity = 6; p.peek = null; }
+      // Lessons begin in the main phase; steps that teach the draft set phase = 'draft' themselves.
+      st.phase = 'main';
     });
     lesson.setup(this.api);
     this.inSetup = false;

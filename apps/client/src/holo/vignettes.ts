@@ -1,6 +1,6 @@
 import { getCard, type GameEvent } from '@pm/engine';
 import * as THREE from 'three';
-import { CIV_MONUMENT, type HoloModel } from './models';
+import { CIV_MONUMENT, cityModel, type HoloModel } from './models';
 import { MY_COLOR, OPP_COLOR, seg, type Stage, type Vignette } from './theater';
 
 type CombatEv = Extract<GameEvent, { type: 'combat' }>;
@@ -48,6 +48,8 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean): Vignette {
     caption,
     tone: R ? 'reverse' : attackerIsMe ? 'mine' : 'theirs',
     setup(s) {
+      s.facing = attackerIsMe ? Math.PI / 2 : -Math.PI / 2; // you attack away from yourself, they attack toward you
+      s.river(-0.28, 0.4);
       A = aCards.map((c, i) => s.spawn(c, 'unit', aCol, [-0.95, 0, lane(i, aCards.length)], 1.2, true));
       D = dCards.map((c, i) => s.spawn(c, 'unit', dCol, [0.32, 0, lane(i, dCards.length, 0.28)], 1.2, false));
       target = s.spawn(e.target === 'city' ? 'city' : e.target, 'building', dCol, [0.82, 0, 0], 0.9);
@@ -129,8 +131,8 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean): Vignette {
 export function schemeScene(e: SchemeEv, casterIsMe: boolean, destroyed: { target: boolean; mirror: boolean }): Vignette {
   const cCol = casterIsMe ? MY_COLOR : OPP_COLOR, dCol = casterIsMe ? OPP_COLOR : MY_COLOR;
   const card = getCard(e.cardId);
-  const tgtId = e.targetCardId ?? (e.cardId === 'poison' ? 'granary' : e.cardId === 'carth_blockade' ? 'aksum_adulis' : 'city');
-  const fxColor = e.cardId === 'arson' ? FIRE : e.cardId === 'saboteurs' || e.cardId === 'carth_blockade' ? VIOLET : e.cardId === 'poison' ? POISON : RED;
+  const tgtId = e.targetCardId ?? (e.cardId === 'raidStores' ? 'granary' : e.cardId === 'carth_blockade' ? 'aksum_adulis' : 'city');
+  const fxColor = e.cardId === 'arson' || e.cardId === 'sack' ? FIRE : e.cardId === 'saboteurs' || e.cardId === 'carth_blockade' ? VIOLET : e.cardId === 'raidStores' ? POISON : e.cardId === 'arrowStorm' ? WHITE : RED;
   let agent!: HoloModel, target!: HoloModel, back: HoloModel | null = null;
   const orb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 8), new THREE.MeshBasicMaterial({ color: fxColor, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
   const fired = new Set<string>();
@@ -143,7 +145,7 @@ export function schemeScene(e: SchemeEv, casterIsMe: boolean, destroyed: { targe
     const p = seg(t, start, start + 1.3, false);
     if (p <= 0) return;
     if (e.cardId === 'arson' && p < 0.9 && Math.floor(t * 12) % 2 === 0) s.burst(m.group.position.clone().setY(0.2), FIRE, 10, { speed: 0.35, gravity: -0.6, ttl: 0.8, size: 0.04 });
-    if (e.cardId === 'poison' && p < 0.9 && Math.floor(t * 10) % 2 === 0) s.burst(m.group.position.clone().setY(0.45), POISON, 8, { speed: 0.2, gravity: 0.5, ttl: 0.9 });
+    if (e.cardId === 'raidStores' && p < 0.9 && Math.floor(t * 10) % 2 === 0) s.burst(m.group.position.clone().setY(0.45), POISON, 8, { speed: 0.2, gravity: 0.5, ttl: 0.9 });
     if (e.cardId === 'saboteurs' || e.cardId === 'carth_blockade') { m.uniforms.uGlitch.value = p < 1 ? 1 : 0; m.group.rotation.z = Math.sin(t * 9) * 0.06 * (1 - p); }
     if (gone) s.shatter(m, seg(t, start + 0.4, start + 1.5, false));
     else m.uniforms.uHeat.value = Math.sin(Math.PI * p) * (e.cardId === 'saboteurs' ? 0.2 : 0.8);
@@ -154,6 +156,8 @@ export function schemeScene(e: SchemeEv, casterIsMe: boolean, destroyed: { targe
     caption,
     tone: e.outcome === 'hit' ? (casterIsMe ? 'mine' : 'theirs') : 'reverse',
     setup(s) {
+      s.facing = casterIsMe ? Math.PI / 2 : -Math.PI / 2;
+      s.river(-0.08, 0.36);
       agent = e.cardId === 'carth_blockade' ? s.spawn('carth_quinq', 'unit', cCol, [-0.75, 0, 0], 1.1, true) : s.spawn('militia', 'unit', cCol, [-0.75, 0, 0], 1.3, true);
       target = s.spawn(tgtId, 'building', dCol, [0.6, 0, 0], 0.95);
       if (e.outcome === 'mirrored' && e.mirrorTargetCardId) back = s.spawn(e.mirrorTargetCardId, 'building', cCol, [-0.75, 0, -0.45], 0.8);
@@ -257,7 +261,9 @@ export function victoryScene(civ: string, won: boolean): Vignette {
 /** Looping preview used in the card close-up: shows what the card does. */
 export function previewScene(cardId: string): Vignette {
   const c = getCard(cardId);
-  if (c.kind === 'building') { const v = raiseScene(cardId, true); return { ...v, duration: v.duration + 1.4, caption: c.name }; }
+  if (c.family === 'civ') { const v = growScene(cardId, c.civ ?? 'sumer', Math.max(1, c.age), true); return { ...v, duration: v.duration + 1, caption: c.name }; }
+  if (c.kind === 'fort') { const v = deployScene([cardId], true); return { ...v, duration: v.duration + 1, caption: c.name }; }
+  if (c.kind === 'tactic' && !c.hostile) return { ...tacticScene(cardId, true), caption: c.name };
   if (c.kind === 'unit') {
     let m: HoloModel[] = [];
     return {
@@ -273,7 +279,7 @@ export function previewScene(cardId: string): Vignette {
     }
     return battleScene({
       type: 'combat', attacker: 1, power: 4, blocked: 4, wallAbsorbed: 0, dealt: 0, attackerCards: ['spearmen', 'spearmen', 'militia'], blockerCards: ['archers', 'spearmen'],
-      attackersLost: r === 'feignedRetreat' ? 0 : 2, blockersLost: 0, target: 'city', wallCard: null, reaction: r, cancelled: r === 'feignedRetreat', tideBack: r === 'turnTheTide' ? 3 : 0, targetDestroyed: false,
+      attackersLost: r === 'feignedRetreat' ? 0 : 2, blockersLost: 0, target: 'city', wallCard: null, reaction: r, cancelled: r === 'feignedRetreat', tideBack: r === 'turnTheTide' ? 3 : 0, targetDestroyed: false, towerHits: 0, progressRaided: 0,
     }, false);
   }
   if (c.hostile) return schemeScene({ type: 'scheme', caster: 0, cardId, targetCardId: c.target === 'enemyBuilding' ? 'market' : null, outcome: 'hit', mirrorTargetCardId: null }, true, { target: false, mirror: false });
@@ -283,5 +289,122 @@ export function previewScene(cardId: string): Vignette {
     duration: 2.4, caption: c.name, tone: 'mine',
     setup(s) { m = s.spawn('city', 'building', MY_COLOR, [0, 0, 0], 1.3); },
     update(s, t) { s.reveal(m, seg(t, 0, 0.6)); if (t > 0.8 && t < 0.85) s.burst([0, 0.6, 0], 0xf3dfa6, 100, { speed: 0.9, gravity: 0.4, ttl: 1.2 }); m.group.rotation.y = t * 0.3; s.fadeAll(seg(t, 2.0, 2.4)); },
+  };
+}
+
+
+// ===================================================================== growth, Ages, deployment
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+const GOLD = 0xf3dfa6;
+
+/** A Civilization card: your city at its current Age, the new building rising beside it, Progress streaming in. */
+export function growScene(cardId: string, civ: string, age: number, mine: boolean, progress?: number): Vignette {
+  const c = getCard(cardId);
+  const col = mine ? MY_COLOR : OPP_COLOR;
+  const building = c.kind === 'building';
+  const gain = progress ?? c.progress ?? 0;
+  let city!: HoloModel, b: HoloModel | null = null;
+  const dur = building ? 2.4 : 2.0;
+  return {
+    duration: dur,
+    caption: `${mine ? 'Your' : 'Their'} civilization grows: ${c.name}${gain ? ` · +${gain} Progress` : ''}`,
+    tone: mine ? 'mine' : 'theirs',
+    setup(s) {
+      city = s.cityAt(civ, age, col, building ? [-0.28, 0, 0] : [0, 0, 0], building ? 1.25 : 1.45);
+      if (building) b = s.spawn(cardId, 'building', col, [0.62, 0, 0.1], 0.85);
+    },
+    update(s, t) {
+      s.reveal(city, seg(t, 0, 0.5));
+      city.group.rotation.y = t * 0.25;
+      if (b) {
+        s.reveal(b, seg(t, 0.35, 1.3, false));
+        b.uniforms.uHeat.value = 0.25 * Math.sin(Math.PI * seg(t, 0.35, 1.3));
+      }
+      // Progress motes rise from the new work into the city.
+      if (t > 0.9 && t < 1.8 && Math.floor(t * 14) % 2 === 0) s.burst(building ? [0.55, 0.3, 0.1] : [0, 0.05, 0], GOLD, 6, { speed: 0.5, gravity: -0.6, ttl: 0.9, size: 0.035, up: 0.6 });
+      if (gain && t > 1.1) s.once('lbl', () => s.label(`+${gain} Progress`, [0, 0.95, 0], '#f3dfa6', 1.2, 0.34));
+      s.fadeAll(seg(t, dur - 0.35, dur));
+    },
+  };
+}
+
+/** A new Age: the old settlement gives way to the larger city of the next Age. */
+export function ageUpScene(civ: string, age: number, ageName: string, mine: boolean): Vignette {
+  const col = mine ? MY_COLOR : OPP_COLOR;
+  let before!: HoloModel, after!: HoloModel;
+  return {
+    duration: 3.6,
+    caption: `${mine ? 'You enter' : 'Your rival enters'} Age ${ROMAN[age - 1]}: ${ageName}`,
+    tone: 'age',
+    setup(s) {
+      before = s.cityAt(civ, Math.max(1, age - 1), col, [0, 0, 0], 1.55);
+      after = s.cityAt(civ, age, col, [0, 0, 0], 1.55);
+    },
+    update(s, t) {
+      s.reveal(before, seg(t, 0, 0.5));
+      before.group.rotation.y = t * 0.3;
+      after.group.rotation.y = t * 0.3;
+      s.dissolve(before, seg(t, 1.0, 1.5));
+      if (t > 1.2) s.once('ring', () => { s.burst([0, 0.05, 0], GOLD, 160, { speed: 1.3, gravity: 0.1, ttl: 1.4, size: 0.03 }); s.burst([0, 0.6, 0], col, 80, { speed: 0.8, gravity: 0.6, ttl: 1.2 }); });
+      s.reveal(after, seg(t, 1.25, 2.6, false));
+      if (t > 2.0) s.once('lbl', () => s.label(`Age ${ROMAN[age - 1]}`, [0, 1.05, 0], '#f3dfa6', 1.6, 0.46));
+      s.fadeAll(seg(t, 3.2, 3.6));
+    },
+  };
+}
+
+/** Military deployment: soldiers march up to the riverbank and take position, or a fort rises at the water. */
+export function deployScene(cardIds: string[], mine: boolean): Vignette {
+  const col = mine ? MY_COLOR : OPP_COLOR;
+  const cards = cardIds.slice(0, 4).map(getCard);
+  const forts = cards.filter((c) => c.kind !== 'unit');
+  const units = cards.filter((c) => c.kind === 'unit');
+  let U: HoloModel[] = [], F: HoloModel[] = [];
+  const names = [...new Set(cards.map((c) => c.name))];
+  return {
+    duration: 2.3,
+    caption: `${names.join(' and ')} ${forts.length && !units.length ? 'rise' : 'take'} ${forts.length && !units.length ? 'on' : 'position on'} ${mine ? 'your' : 'their'} riverbank`,
+    tone: mine ? 'mine' : 'theirs',
+    setup(s) {
+      s.facing = mine ? Math.PI / 2 : -Math.PI / 2;
+      s.river(0.45, 0.42);
+      // Each unit card is shown as a small squad.
+      const squad = units.flatMap((c) => [c.id, c.id]).slice(0, 6);
+      U = squad.map((id, i) => s.spawn(id, 'unit', col, [-0.95 - (i % 2) * 0.12, 0, lane(Math.floor(i / 2) + (i % 2) * 0.5, Math.ceil(squad.length / 2) + 0.5, 0.42)], 1.15, true));
+      F = forts.map((c, i) => { const m = s.spawn(c.id, 'building', col, [0.08, 0, lane(i, forts.length, 0.3)], 0.75); m.group.rotation.y = Math.PI / 2; return m; });
+    },
+    update(s, t) {
+      U.forEach((m, i) => { s.reveal(m, seg(t, 0, 0.4)); walk(m, -0.95 - (i % 2) * 0.12, -0.05 - (i % 2) * 0.14, seg(t, 0.3, 1.5), t + i); });
+      F.forEach((m) => s.reveal(m, seg(t, 0.2, 1.3, false)));
+      if (t > 1.5) s.once('set', () => U.forEach((m) => s.burst(m.group.position.clone().setY(0.02), col, 6, { speed: 0.3, gravity: 0.5, ttl: 0.5 })));
+      s.fadeAll(seg(t, 1.95, 2.3));
+    },
+  };
+}
+
+/** A non-hostile military tactic (Kandake's Command, Chasqui Relay, Restore the Walls…). */
+export function tacticScene(cardId: string, mine: boolean): Vignette {
+  const c = getCard(cardId);
+  const col = mine ? MY_COLOR : OPP_COLOR;
+  const buff = (c.effects ?? []).some((e) => e.op === 'buffUnits' || e.op === 'readyUnits');
+  const repair = (c.effects ?? []).some((e) => e.op === 'repairAll' || e.op === 'repair');
+  let M: HoloModel[] = [];
+  return {
+    duration: 2.0,
+    caption: c.name,
+    tone: mine ? 'mine' : 'theirs',
+    setup(s) {
+      if (buff) M = [-0.4, 0, 0.4].map((x) => s.spawn('spearmen', 'unit', col, [x, 0, 0], 1.4, true));
+      else if (repair) M = [s.spawn('walls', 'building', col, [0, 0, 0], 1.1)];
+      else M = [s.spawn('militia', 'unit', col, [-0.8, 0, 0], 1.4, true), s.spawn('militia', 'unit', col, [0.1, 0, 0], 1.4, true)];
+    },
+    update(s, t) {
+      M.forEach((m) => s.reveal(m, seg(t, 0, 0.45)));
+      if (buff) M.forEach((m) => { m.uniforms.uHeat.value = 0.55 * Math.sin(Math.PI * seg(t, 0.5, 1.6)); m.group.scale.setScalar(1.4 * (1 + 0.12 * Math.sin(Math.PI * seg(t, 0.5, 1.6)))); });
+      if (repair && t > 0.5 && t < 1.5 && Math.floor(t * 12) % 2 === 0) s.burst([(Math.random() - 0.5) * 0.8, 0.3, 0], GOLD, 6, { speed: 0.4, gravity: 0.8, ttl: 0.6 });
+      if (!buff && !repair) { walk(M[0], -0.8, 0.0, seg(t, 0.3, 1.2), t); if (t > 1.2) s.once('pass', () => s.burst([0.05, 0.3, 0], GOLD, 40, { speed: 0.6 })); }
+      s.fadeAll(seg(t, 1.65, 2.0));
+    },
   };
 }

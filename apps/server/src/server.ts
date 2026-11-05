@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-  actingPlayer, applyAction, createGame, getCiv, isCivId, other, RuleError, validateDeck, viewFor,
+  actingPlayer, applyAction, createGame, isCivId, other, RuleError, viewFor,
   ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH,
   type Action, type ClientMsg, type CivId, type GameEvent, type GameState, type PlayerId, type ServerMsg,
 } from '@pm/engine';
@@ -12,7 +12,7 @@ import {
 /*
  * Authoritative game server. Clients send intents; the server validates every
  * action with the shared rules engine, owns the only full copy of the state
- * (including hands, deck order and RNG), and sends each seat a redacted view.
+ * (including hands, both draw piles and the RNG), and sends each seat a redacted view.
  */
 
 export interface ServerOptions {
@@ -28,7 +28,6 @@ export interface ServerOptions {
 interface Seat {
   name: string;
   civ: CivId;
-  deck: string[];
   token: string;
   socket: WebSocket | null;
   lastSeq: number;
@@ -148,12 +147,9 @@ export function startServer(opts: ServerOptions = {}): Promise<{ server: Server;
     send(room.seats[other(seat)]?.socket ?? null, { t: 'opponent', connected: true });
   }
 
-  function parseSetup(msg: { name?: unknown; civ?: unknown; deck?: unknown }): { error: string } | { name: string; civ: CivId; deck: string[] } {
+  function parseSetup(msg: { name?: unknown; civ?: unknown }): { error: string } | { name: string; civ: CivId } {
     if (!isCivId(msg.civ)) return { error: 'Unknown civilization.' };
-    const deck = msg.deck === undefined ? getCiv(msg.civ).starterDeck : msg.deck;
-    const errs = validateDeck(msg.civ, deck);
-    if (errs.length) return { error: `Illegal deck: ${errs[0]}` };
-    return { name: cleanName(msg.name), civ: msg.civ, deck: [...(deck as string[])] };
+    return { name: cleanName(msg.name), civ: msg.civ };
   }
 
   wss.on('connection', (ws) => {
@@ -205,7 +201,7 @@ export function startServer(opts: ServerOptions = {}): Promise<{ server: Server;
           bind(ws, room, 1);
           send(ws, { t: 'joined', code: room.code, seat: 1, token: room.seats[1].token });
           const [a, b] = room.seats as [Seat, Seat];
-          const r = createGame(randomInt(1, 2 ** 31), [{ name: a.name, civ: a.civ, deck: a.deck }, { name: b.name, civ: b.civ, deck: b.deck }]);
+          const r = createGame(randomInt(1, 2 ** 31), [{ name: a.name, civ: a.civ }, { name: b.name, civ: b.civ }]);
           room.state = r.state;
           pushState(room, r.events);
           armIdle(room);

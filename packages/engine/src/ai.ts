@@ -1,57 +1,102 @@
-import { getCard, RULES } from './data';
-import { actingPlayer, applyAction, incomeOf, maxIntegrity, other, unitMaxHp, unitStr, workingBuildings } from './engine';
+import { getCard, progressNeeded, RULES } from './data';
+import { actingPlayer, applyAction, draftNeeded, incomeOf, maxIntegrity, other, unitMaxHp, unitStr, workingBuildings } from './engine';
 import { availableBlockers, listPlays, playableReactions, readyAttackers } from './legal';
-import type { Action, GameState, PlayerId, PlayerState } from './types';
+import type { Action, Age, CivId, GameState, PlayerId, PlayerState } from './types';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 /*
- * Heuristic opponent. It only ever reasons about public information plus its
- * own hand: when it simulates an attack it assumes the defender blocks as well
- * as possible but never peeks at the defender's hidden reactions, and its
- * evaluation counts hand size rather than the identity of undrawn cards.
+ * Heuristic opponent. It reasons only from what its own seat can see: its
+ * hand, the board and public counts. Attack previews assume the defender
+ * blocks as well as possible but never peek at the defender's reactions.
  */
 
 // ------------------------------------------------------------------ evaluation
 
+/** Total development: Progress banked across all Ages. Reaching the Golden Age = 60. */
+export function development(p: PlayerState): number {
+  let d = p.progress;
+  for (let a = 1; a < p.age; a++) d += progressNeeded(a as Age);
+  return d;
+}
+const GOLDEN = RULES.progressToAdvance.reduce((a, b) => a + b, 0);
+
+function armyPower(p: PlayerState) {
+  return p.units.reduce((s, u) => s + unitStr(p, u), 0);
+}
+
 function playerValue(p: PlayerState, oppPower: number): number {
   const w = workingBuildings(p);
   const inc = incomeOf(p);
+  const dev = development(p);
   let v = 0;
-  // Stability matters more the closer it is to zero.
-  v += p.stability * 3 + Math.max(0, 10 - p.stability) * 2.5;
-  v += p.legacy * 2.2 + Math.max(0, p.legacy - 8) * 2.5;
-  v += p.goods * 0.45 + Math.min(p.food, 8) * 0.3 + p.momentum * 1.1;
-  v += Math.min(p.hand.length, 7) * 1.3;
-  v += inc.goods * 1.6 + inc.legacy * 4.2;
-  v += inc.netFood >= 0 ? Math.min(inc.netFood, 3) * 0.8 : inc.netFood * 2.5;
-  if (p.food + inc.netFood < 0) v -= 6; // famine next turn
+  v += dev * 2.4 + Math.max(0, dev - GOLDEN * 0.6) * 3; // the race to the Golden Age
+  v += p.age * 4;
+  v += p.stability * 2.6 + Math.max(0, 12 - p.stability) * 3;
+  v += p.prosperity * 0.35 + p.momentum * 1.2;
+  v += Math.min(p.hand.length, RULES.handSize) * 1.1;
+  v += inc.net * 1.4 + inc.growth * 3.2;
+  if (inc.net < 0) v -= 5; // the army is about to desert
   for (const b of p.buildings) {
     const c = getCard(b.cardId);
     const health = (maxIntegrity(b) - b.damage) / maxIntegrity(b);
-    v += (w.has(b.uid) ? 1.2 + c.cost * 0.9 : 0.4 + c.cost * 0.3) * (0.6 + 0.4 * health);
+    v += (w.has(b.uid) ? 1 + c.cost * 0.7 : 0.3 + c.cost * 0.25) * (0.6 + 0.4 * health);
     if ((c.passives ?? []).includes('wall') && w.has(b.uid)) v += (maxIntegrity(b) - b.damage) * 0.35;
   }
-  let myPower = 0;
-  for (const u of p.units) {
-    const s = unitStr(p, u);
-    myPower += s;
-    v += s * 1.6 + (unitMaxHp(p, u) - u.damage) * 0.9 + 0.5;
-  }
-  // Exposure: enemy strength our army could not absorb next turn.
-  v -= Math.max(0, oppPower - myPower) * 0.6;
+  const power = armyPower(p);
+  for (const u of p.units) v += unitStr(p, u) * 1.5 + (unitMaxHp(p, u) - u.damage) * 0.8 + 0.4;
+  v -= Math.max(0, oppPower - power) * 0.7;
   return v;
 }
 
 export function evaluate(st: GameState, me: PlayerId): number {
   if (st.phase === 'over') return st.winner === me ? 1e6 : -1e6;
   const a = st.players[me], b = st.players[other(me)];
-  const pa = a.units.reduce((s, u) => s + unitStr(a, u), 0);
-  const pb = b.units.reduce((s, u) => s + unitStr(b, u), 0);
-  return playerValue(a, pb) - playerValue(b, pa);
+  return playerValue(a, armyPower(b)) - playerValue(b, armyPower(a));
 }
 
-// ------------------------------------------------------------------ helpers
+// ------------------------------------------------------------------ draft
+
+const AGGRESSION: Record<CivId, number> = { kush: 0.5, carthage: 0.5, inca: 0.2, aksum: -0.3, sumer: -0.4 };
+
+/** Decide the blind pick: how many cards from each deck, and what to throw away first. */
+export function chooseDraft(st: GameState, me: PlayerId, diff: Difficulty = 'normal'): Action {
+  const p = st.players[me], opp = st.players[other(me)];
+  // Discard cards from retired Ages, and surplus reactions.
+  const discard: string[] = [];
+  let reactions = 0;
+  for (const c of p.hand) {
+    if (c.cardId === '?') continue;
+    const card = getCard(c.cardId);
+    if (card.age < p.age - 1) discard.push(c.uid);
+    else if (card.kind === 'reaction' && ++reactions > 2) discard.push(c.uid);
+  }
+  const need = draftNeeded(p, discard.length);
+  if (need === 0) return { type: 'draft', civ: 0, mil: 0, discard };
+
+  const myDefense = p.units.filter((u) => !u.attacked).reduce((s, u) => s + unitStr(p, u) + 1, 0)
+    + p.buildings.filter((b) => (getCard(b.cardId).passives ?? []).includes('wall')).reduce((s, b) => s + (maxIntegrity(b) - b.damage) * 0.5, 0);
+  const threat = armyPower(opp) - myDefense;
+  const behind = development(opp) - development(p); // rival racing ahead: slow them down
+  const milInHand = p.hand.filter((c) => c.cardId !== '?' && !discard.includes(c.uid) && getCard(c.cardId).family === 'mil').length;
+  const civInHand = p.hand.length - discard.length - milInHand;
+
+  let mil = need * 0.35 + AGGRESSION[p.civ];
+  mil += Math.max(0, threat) * 0.35;
+  mil += Math.max(0, behind) * 0.08;
+  mil += (civInHand - milInHand) * 0.25;
+  if (p.prosperity + incomeOf(p).net < 3) mil -= 0.5; // cannot afford an army: grow first
+  // Sumer's scribes: lean toward whichever deck is showing a strong card on top.
+  if (p.peek && diff !== 'easy') {
+    const worth = (id: string | null) => (id ? getCard(id).cost + (getCard(id).age >= p.age ? 2 : 0) : 0);
+    mil += (worth(p.peek.mil) - worth(p.peek.civ)) * 0.25;
+  }
+  if (diff === 'easy') mil += ((st.turn * 7919) % 5) / 2 - 1;
+  const m = Math.max(0, Math.min(need, Math.round(mil)));
+  return { type: 'draft', civ: need - m, mil: m, discard };
+}
+
+// ------------------------------------------------------------------ play
 
 function tryApply(st: GameState, pid: PlayerId, a: Action): GameState | null {
   try { return applyAction(st, pid, a).state; } catch { return null; }
@@ -64,7 +109,6 @@ function subsets<T>(items: T[], max = 64): T[][] {
   return out;
 }
 
-/** Best blocks for `defender` without any reaction — public information only. */
 function bestBlockOnly(st: GameState, defender: PlayerId): GameState {
   let best: GameState | null = null, bestV = -Infinity;
   for (const blk of subsets(availableBlockers(st, defender))) {
@@ -76,7 +120,6 @@ function bestBlockOnly(st: GameState, defender: PlayerId): GameState {
   return best ?? applyAction(st, defender, { type: 'respond', blockerUids: [] }).state;
 }
 
-/** After one of our actions, assume a sensible reply if a response window opened. */
 function settle(st: GameState, me: PlayerId, diff: Difficulty): GameState {
   if (st.phase !== 'response' || !st.pending) return st;
   const defender = other(me);
@@ -109,7 +152,6 @@ function noise(seed: number): number {
   return x - Math.floor(x);
 }
 
-/** Greedy best single action this instant, or endTurn. */
 function greedy(st: GameState, me: PlayerId, diff: Difficulty, salt = 0): { action: Action; value: number } {
   let bestA: Action = { type: 'endTurn' };
   let bestV = evaluate(st, me) + 0.25;
@@ -123,7 +165,6 @@ function greedy(st: GameState, me: PlayerId, diff: Difficulty, salt = 0): { acti
   return { action: bestA, value: bestV };
 }
 
-/** Play out the rest of the turn greedily and return the resulting value. */
 function rollout(st: GameState, me: PlayerId, steps: number): number {
   let s = st;
   for (let i = 0; i < steps && s.phase === 'main' && s.active === me; i++) {
@@ -135,8 +176,6 @@ function rollout(st: GameState, me: PlayerId, steps: number): number {
   }
   return evaluate(s, me);
 }
-
-// ------------------------------------------------------------------ public API
 
 export function chooseResponse(st: GameState, me: PlayerId, diff: Difficulty = 'normal'): Action {
   const reactions: (string | undefined)[] = [undefined, ...playableReactions(st, me)];
@@ -160,10 +199,10 @@ export function chooseResponse(st: GameState, me: PlayerId, diff: Difficulty = '
 
 export function chooseAction(st: GameState, me: PlayerId, diff: Difficulty = 'normal'): Action {
   if (actingPlayer(st) !== me) throw new Error('AI asked to act out of turn.');
+  if (st.phase === 'draft') return chooseDraft(st, me, diff);
   if (st.phase === 'response') return chooseResponse(st, me, diff);
   if (diff !== 'hard') return greedy(st, me, diff).action;
 
-  // Hard: look one action ahead and play the rest of the turn out greedily.
   const base = rollout(st, me, 0) + 0.25;
   const scored: { a: Action; v: number }[] = [];
   for (const a of candidates(st, me)) {
@@ -182,5 +221,4 @@ export function chooseAction(st: GameState, me: PlayerId, diff: Difficulty = 'no
   return bestA;
 }
 
-/** Safety valve used by callers: a turn never needs more than this many AI actions. */
-export const AI_ACTIONS_PER_TURN = RULES.maxBuildings + RULES.maxUnits + 12;
+export const AI_ACTIONS_PER_TURN = RULES.maxBuildings + RULES.maxUnits + 14;

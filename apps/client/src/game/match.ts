@@ -42,7 +42,7 @@ abstract class Match {
 
 export interface LocalSetup {
   seed: number;
-  human: { name: string; civ: CivId; deck: string[] };
+  human: { name: string; civ: CivId };
   ai: { name: string; civ: CivId };
   difficulty: Difficulty;
   pace: number; // 0 = instant, 1 = normal, 2 = slow
@@ -57,7 +57,7 @@ export class LocalMatch extends Match {
     super(false);
     const humanFirst = setup.seed % 2 === 0;
     const r = createGame(setup.seed, [
-      { name: setup.human.name, civ: setup.human.civ, deck: setup.human.deck },
+      { name: setup.human.name, civ: setup.human.civ },
       { name: setup.ai.name, civ: setup.ai.civ },
     ], humanFirst ? 0 : 1);
     this.state = r.state;
@@ -132,8 +132,8 @@ function saveRoom(r: SavedRoom | null) {
 }
 
 export type OnlineIntent =
-  | { kind: 'create'; name: string; civ: CivId; deck: string[] }
-  | { kind: 'join'; code: string; name: string; civ: CivId; deck: string[] }
+  | { kind: 'create'; name: string; civ: CivId }
+  | { kind: 'join'; code: string; name: string; civ: CivId }
   | { kind: 'resume'; code: string; token: string };
 
 export class OnlineMatch extends Match {
@@ -157,8 +157,8 @@ export class OnlineMatch extends Match {
     ws.onopen = () => {
       this.retries = 0;
       if (this.code && this.token) this.raw({ t: 'resume', code: this.code, token: this.token });
-      else if (this.intent.kind === 'create') this.raw({ t: 'create', name: this.intent.name, civ: this.intent.civ, deck: this.intent.deck });
-      else if (this.intent.kind === 'join') this.raw({ t: 'join', code: this.intent.code, name: this.intent.name, civ: this.intent.civ, deck: this.intent.deck });
+      else if (this.intent.kind === 'create') this.raw({ t: 'create', name: this.intent.name, civ: this.intent.civ });
+      else if (this.intent.kind === 'join') this.raw({ t: 'join', code: this.intent.code, name: this.intent.name, civ: this.intent.civ });
       if (this.pingTimer) clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => this.raw({ t: 'ping' }), 20000);
     };

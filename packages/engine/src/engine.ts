@@ -1,46 +1,48 @@
-import { getCard, getCiv, RULES } from './data';
+import { ageName, getCard, getCiv, progressNeeded, RULES } from './data';
 import { shuffleInPlace } from './rng';
 import type {
-  Action, ApplyResult, AttackTarget, BuildingInst, CardDef, CardInst, CivId, Effect, GameEvent,
+  Action, Age, ApplyResult, AttackTarget, BuildingInst, CardDef, CardInst, CivId, Effect, Family, GameEvent,
   GameState, Passive, PendingAction, PendingAttack, PlayerId, PlayerState, ReactionKind, Resource, UnitInst,
 } from './types';
 import { RuleError } from './types';
 
+/*
+ * Turn flow
+ *   1. Upkeep  — Prosperity income, Progress from growth, army upkeep (unpaid units desert).
+ *   2. Draft   — refill the hand to 6, choosing blind how many cards come from each deck.
+ *   3. Main    — play cards, attack across the river, invoke the Signature, end the turn.
+ * Attacks and Hostile cards open a response window for the defender.
+ */
+
 // ====================================================================== setup
 
-export interface PlayerSetup {
-  name: string;
-  civ: CivId;
-  deck?: string[]; // defaults to the civ's starter deck (validate before passing)
-}
+export interface PlayerSetup { name: string; civ: CivId }
 
 export function createGame(seed: number, setups: [PlayerSetup, PlayerSetup], firstPlayer?: PlayerId): ApplyResult {
   const st: GameState = {
-    version: 1, seed, rng: seed >>> 0 || 1, turn: 0, active: 0, phase: 'main', pending: null,
+    version: 2, seed, rng: seed >>> 0 || 1, turn: 0, active: 0, phase: 'draft', pending: null,
     players: [null as unknown as PlayerState, null as unknown as PlayerState],
     winner: null, winReason: null, uidCounter: 0, log: [],
   };
   setups.forEach((s, i) => {
-    const id = i as PlayerId;
-    const deckIds = s.deck ?? getCiv(s.civ).starterDeck;
-    const deck: CardInst[] = deckIds.map((cardId) => ({ uid: newUid(st), cardId }));
-    shuffleInPlace(st, deck);
-    st.players[id] = {
-      id, name: s.name, civ: s.civ, stability: RULES.startingStability, legacy: 0, goods: 0,
-      food: RULES.startingFood, momentum: 0, deck, hand: [], discard: [], buildings: [], units: [],
-      signatureUsed: false, lastSuit: null, handRevealedTo: false,
+    const p: PlayerState = {
+      id: i as PlayerId, name: s.name, civ: s.civ, age: 1, progress: 0, prosperity: 0,
+      stability: RULES.startingStability, momentum: 0,
+      piles: { civ: [], mil: [] }, discards: { civ: [], mil: [] }, hand: [],
+      buildings: [], units: [], signatureUsed: false, handRevealedTo: false, peek: null,
     };
+    st.players[i] = p;
+    for (const f of ['civ', 'mil'] as Family[]) {
+      p.piles[f] = shuffleInPlace(st, getCiv(s.civ).decks[f][0].map((cardId) => ({ uid: newUid(st), cardId })));
+    }
   });
   const first: PlayerId = firstPlayer ?? (Math.floor(((st.rng >>> 0) % 1000) / 500) as PlayerId);
-  const second = other(first);
-  const events: GameEvent[] = [];
-  for (const p of st.players) drawCards(st, p.id, RULES.startingHand, events, true);
-  // Second-player compensation: an extra card and a head start on Momentum.
-  drawCards(st, second, 1, events, true);
-  st.players[second].momentum = 1;
-  st.active = first;
+  // Going second: a small head start.
+  st.players[other(first)].prosperity = 1;
+  st.players[other(first)].momentum = 1;
   log(st, null, `${st.players[first].name} (${getCiv(st.players[first].civ).name}) moves first.`);
-  beginTurn(st, first, events, true);
+  const events: GameEvent[] = [];
+  beginTurn(st, first, events);
   return { state: st, events };
 }
 
@@ -62,9 +64,11 @@ function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v));
 }
 
+const trait = (p: PlayerState) => getCiv(p.civ).trait.kind;
+
 /** Buildings that are working: not in Unrest and with their requirements met (computed to a fixpoint). */
 export function workingBuildings(p: PlayerState): Set<string> {
-  let working = new Set(p.buildings.filter((b) => b.unrest <= 0).map((b) => b.uid));
+  const working = new Set(p.buildings.filter((b) => b.unrest <= 0).map((b) => b.uid));
   for (;;) {
     let changed = false;
     for (const b of p.buildings) {
@@ -75,7 +79,6 @@ export function workingBuildings(p: PlayerState): Set<string> {
       if (!ok) { working.delete(b.uid); changed = true; }
     }
     if (!changed) return working;
-    working = new Set(working);
   }
 }
 
@@ -88,13 +91,14 @@ export function hasTag(p: PlayerState, tag: string): boolean {
   return p.buildings.some((b) => w.has(b.uid) && (getCard(b.cardId).tags ?? []).includes(tag));
 }
 
-export function hasPassive(p: PlayerState, passive: Passive): boolean {
-  return countPassive(p, passive) > 0;
+function countTag(p: PlayerState, tag: string): number {
+  const w = workingBuildings(p);
+  return p.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).tags ?? []).includes(tag)).length;
 }
 
-function countPassive(p: PlayerState, passive: Passive): number {
+export function hasPassive(p: PlayerState, passive: Passive): boolean {
   const w = workingBuildings(p);
-  return p.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes(passive)).length;
+  return p.buildings.some((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes(passive));
 }
 
 export function maxIntegrity(b: BuildingInst): number {
@@ -102,7 +106,9 @@ export function maxIntegrity(b: BuildingInst): number {
 }
 
 export function unitStr(p: PlayerState, u: UnitInst): number {
-  return (getCard(u.cardId).str ?? 0) + (hasPassive(p, 'unitStr') ? 1 : 0) + u.buff;
+  const c = getCard(u.cardId);
+  const ranged = (c.keywords ?? []).includes('ranged');
+  return (c.str ?? 0) + (hasPassive(p, 'unitStr') ? 1 : 0) + (ranged && trait(p) === 'bowmen' ? 1 : 0) + u.buff;
 }
 
 export function unitMaxHp(p: PlayerState, u: UnitInst): number {
@@ -110,61 +116,110 @@ export function unitMaxHp(p: PlayerState, u: UnitInst): number {
 }
 
 export function costOf(p: PlayerState, card: CardDef): number {
-  if (card.kind === 'building' && card.cost > 0 && hasPassive(p, 'buildDiscount')) return Math.max(1, card.cost - 1);
+  if (card.family === 'civ' && card.cost > 0 && hasPassive(p, 'buildDiscount')) return Math.max(1, card.cost - 1);
+  if (card.kind === 'unit' && trait(p) === 'hiredSwords') return Math.max(1, card.cost - 1);
   return card.cost;
 }
 
-export function canRecruit(p: PlayerState, card: CardDef): boolean {
-  return !card.requiresToRecruit || hasTag(p, card.requiresToRecruit);
+export function canDeploy(p: PlayerState, card: CardDef): boolean {
+  return !card.requiresToDeploy || hasTag(p, card.requiresToDeploy);
 }
 
-/** Per-turn income a player would receive right now (used by UI and AI). */
+/** What a player would collect at their next turn start (used by UI and AI). */
 export function incomeOf(p: PlayerState) {
   const w = workingBuildings(p);
-  let goods = RULES.baseGoods, food = 0, legacy = 0, upkeep = 0, wages = 0;
-  const irrigation = countPassive(p, 'irrigation') > 0;
+  let prosperity = RULES.baseIncome[p.age - 1], growth = 0, upkeep = 0;
+  const farmBoost = hasPassive(p, 'farmBoost');
   for (const b of p.buildings) {
     if (!w.has(b.uid)) continue;
     const c = getCard(b.cardId);
-    goods += c.goods ?? 0;
-    food += (c.food ?? 0) + (irrigation && (c.tags ?? []).includes('farm') ? 1 : 0);
-    legacy += c.legacy ?? 0;
-    if (c.legacyPerSuit) legacy += p.buildings.filter((o) => o.uid !== b.uid && w.has(o.uid) && getCard(o.cardId).suit === c.legacyPerSuit).length;
-    if ((c.passives ?? []).includes('mint')) goods += p.buildings.filter((o) => o.uid !== b.uid && w.has(o.uid) && getCard(o.cardId).suit === 'silk').length;
+    const tags = c.tags ?? [];
+    prosperity += (c.income ?? 0) + (farmBoost && tags.includes('farm') ? 1 : 0) + (trait(p) === 'trade' && tags.includes('harbor') ? 1 : 0);
+    growth += c.growth ?? 0;
   }
-  for (const u of p.units) { upkeep += getCard(u.cardId).upkeep ?? 0; wages += getCard(u.cardId).wage ?? 0; }
-  return { goods, food, legacy, upkeep, wages, netFood: food - upkeep };
+  for (const u of p.units) upkeep += getCard(u.cardId).upkeep ?? 0;
+  return { prosperity, growth, upkeep, net: prosperity - upkeep };
 }
 
 function changeRes(st: GameState, pid: PlayerId, res: Resource, delta: number, events: GameEvent[]) {
+  if (res === 'progress') { if (delta >= 0) addProgress(st, pid, delta, events); else loseProgress(st, pid, -delta, events, false); return; }
   const p = st.players[pid];
   const before = p[res];
   let v = before + delta;
-  if (res === 'goods') v = Math.min(RULES.goodsCap, Math.max(0, v));
-  if (res === 'food') v = Math.min(RULES.foodCap, v); // may go negative: famine is checked at turn start
+  if (res === 'prosperity') v = Math.min(RULES.prosperityCap, Math.max(0, v));
   if (res === 'momentum') v = Math.min(RULES.momentumCap, Math.max(0, v));
-  if (res === 'legacy') v = Math.max(0, v);
   p[res] = v;
   if (v !== before) events.push({ type: 'resource', player: pid, res, delta: v - before });
   if (res === 'stability' && v < before) events.push({ type: 'cityDamaged', player: pid, amount: before - v });
 }
 
-function drawCards(st: GameState, pid: PlayerId, n: number, events: GameEvent[], quiet = false) {
+/** Gain Progress; may advance one or more Ages, or complete the Golden Age. */
+function addProgress(st: GameState, pid: PlayerId, n: number, events: GameEvent[]) {
+  if (n <= 0 || st.phase === 'over') return;
+  const p = st.players[pid];
+  p.progress += n;
+  events.push({ type: 'resource', player: pid, res: 'progress', delta: n });
+  while (p.progress >= progressNeeded(p.age)) {
+    if (p.age === 5) {
+      p.progress = progressNeeded(5);
+      log(st, pid, `${p.name} enters the ${ageName(p.civ, 5)} — a Golden Age!`);
+      finish(st, pid, 'Golden Age: their civilization reaches its height', events);
+      return;
+    }
+    p.progress -= progressNeeded(p.age);
+    advanceAge(st, pid, events);
+  }
+}
+
+/** Lose Progress (never below 0, never back an Age). Raids and fallen buildings are softened by storehouses. */
+function loseProgress(st: GameState, pid: PlayerId, n: number, events: GameEvent[], fromAttack: boolean): number {
+  const p = st.players[pid];
+  let amount = n;
+  if (fromAttack && trait(p) === 'storehouses') amount = Math.floor(n / 2);
+  amount = Math.min(amount, p.progress);
+  if (amount <= 0) return 0;
+  p.progress -= amount;
+  events.push({ type: 'resource', player: pid, res: 'progress', delta: -amount });
+  return amount;
+}
+
+function advanceAge(st: GameState, pid: PlayerId, events: GameEvent[]) {
+  const p = st.players[pid];
+  p.age = (p.age + 1) as Age;
+  const tiers = getCiv(p.civ).decks;
+  // Stronger cards join both decks; cards two Ages old retire.
+  for (const f of ['civ', 'mil'] as Family[]) {
+    const keep = [...p.piles[f], ...p.discards[f]].filter((c) => getCard(c.cardId).age >= p.age - 1);
+    const fresh = tiers[f][p.age - 1].map((cardId) => ({ uid: newUid(st), cardId }));
+    p.piles[f] = shuffleInPlace(st, [...keep, ...fresh]);
+    p.discards[f] = [];
+  }
+  events.push({ type: 'ageUp', player: pid, age: p.age, name: ageName(p.civ, p.age) });
+  log(st, pid, `${p.name} advances to Age ${['I', 'II', 'III', 'IV', 'V'][p.age - 1]}: ${ageName(p.civ, p.age)}.`);
+  changeRes(st, pid, 'momentum', 2, events);
+}
+
+function discard(st: GameState, pid: PlayerId, c: CardInst) {
+  const p = st.players[pid];
+  const card = getCard(c.cardId);
+  if (card.token) return;
+  if (card.age < p.age - 1) return; // retired tier: leaves the game
+  p.discards[card.family].push(c);
+}
+
+function drawFrom(st: GameState, pid: PlayerId, f: Family, n: number): number {
   const p = st.players[pid];
   let drawn = 0;
   for (let i = 0; i < n; i++) {
-    if (p.deck.length === 0) {
-      if (p.discard.length === 0) { changeRes(st, pid, 'stability', -1, events); continue; }
-      p.deck = shuffleInPlace(st, p.discard.splice(0));
-      changeRes(st, pid, 'stability', -1, events);
-      log(st, pid, `${p.name} reshuffles their discard pile (-1 Stability).`);
+    if (p.piles[f].length === 0) {
+      if (p.discards[f].length === 0) break;
+      p.piles[f] = shuffleInPlace(st, p.discards[f].splice(0));
     }
-    const c = p.deck.shift()!;
-    if (p.hand.length >= RULES.handLimit) { p.discard.push(c); continue; }
-    p.hand.push(c);
+    if (p.hand.length >= RULES.handLimit) break;
+    p.hand.push(p.piles[f].shift()!);
     drawn++;
   }
-  if (drawn && !quiet) events.push({ type: 'draw', player: pid, n: drawn });
+  return drawn;
 }
 
 function destroyBuilding(st: GameState, pid: PlayerId, uid: string, events: GameEvent[]) {
@@ -172,9 +227,11 @@ function destroyBuilding(st: GameState, pid: PlayerId, uid: string, events: Game
   const idx = p.buildings.findIndex((b) => b.uid === uid);
   if (idx < 0) return;
   const [b] = p.buildings.splice(idx, 1);
-  p.discard.push({ uid: b.uid, cardId: b.cardId });
-  events.push({ type: 'buildingDestroyed', player: pid, uid, cardId: b.cardId });
-  log(st, pid, `${getCard(b.cardId).name} of ${p.name} collapses (-1 Stability).`);
+  const card = getCard(b.cardId);
+  discard(st, pid, { uid: b.uid, cardId: b.cardId });
+  const lost = card.family === 'civ' ? loseProgress(st, pid, card.age, events, true) : 0;
+  events.push({ type: 'buildingDestroyed', player: pid, uid, cardId: b.cardId, progressLost: lost });
+  log(st, pid, `${card.name} of ${p.name} falls (-1 Stability${lost ? `, -${lost} Progress` : ''}).`);
   changeRes(st, pid, 'stability', -1, events);
 }
 
@@ -191,7 +248,7 @@ function removeUnit(st: GameState, pid: PlayerId, uid: string, events: GameEvent
   const idx = p.units.findIndex((u) => u.uid === uid);
   if (idx < 0) return;
   const [u] = p.units.splice(idx, 1);
-  if (!getCard(u.cardId).token && !u.uid.startsWith('t')) p.discard.push({ uid: u.uid, cardId: u.cardId });
+  if (!u.uid.startsWith('t')) discard(st, pid, { uid: u.uid, cardId: u.cardId });
   events.push({ type: deserted ? 'unitDeserted' : 'unitDestroyed', player: pid, uid, cardId: u.cardId });
 }
 
@@ -208,54 +265,44 @@ function addUnit(st: GameState, pid: PlayerId, cardId: string, events: GameEvent
   const swift = (card.keywords ?? []).includes('swift') || hasPassive(p, 'swift');
   const u: UnitInst = { uid: uid ?? `t${newUid(st)}`, cardId, damage: 0, ready: swift, attacked: false, blocked: false, buff: 0 };
   p.units.push(u);
-  events.push({ type: 'unitRecruited', player: pid, uid: u.uid, cardId });
+  events.push({ type: 'unitDeployed', player: pid, uid: u.uid, cardId });
 }
 
 // ====================================================================== turn flow
 
-function beginTurn(st: GameState, pid: PlayerId, events: GameEvent[], firstTurnOfGame = false) {
+function beginTurn(st: GameState, pid: PlayerId, events: GameEvent[]) {
   st.turn += 1;
   st.active = pid;
-  st.phase = 'main';
+  st.phase = 'draft';
   st.pending = null;
   const p = st.players[pid];
   const opp = st.players[other(pid)];
   p.signatureUsed = false;
-  p.lastSuit = null;
   for (const u of p.units) { u.ready = true; u.attacked = false; }
   for (const u of opp.units) u.blocked = false;
   events.push({ type: 'turnStart', player: pid, turn: st.turn });
 
-  // Wages: hired soldiers want paying before anything else.
-  for (const u of [...p.units]) {
-    const wage = getCard(u.cardId).wage ?? 0;
-    if (!wage) continue;
-    if (p.goods >= wage) changeRes(st, pid, 'goods', -wage, events);
+  // Income first, then upkeep: the army is paid strongest-first; whoever can't be paid deserts.
+  const inc = incomeOf(p);
+  changeRes(st, pid, 'prosperity', inc.prosperity, events);
+  let paid = 0;
+  const byValue = [...p.units].sort((a, b) => getCard(b.cardId).cost - getCard(a.cardId).cost);
+  for (const u of byValue) {
+    const fee = getCard(u.cardId).upkeep ?? 0;
+    if (!fee) continue;
+    if (p.prosperity >= fee) { p.prosperity -= fee; paid += fee; }
     else { removeUnit(st, pid, u.uid, events, true); log(st, pid, `Unpaid, ${getCard(u.cardId).name} deserts ${p.name}.`); }
   }
-
-  const inc = incomeOf(p);
-  changeRes(st, pid, 'goods', inc.goods, events);
-  changeRes(st, pid, 'food', inc.netFood, events);
-  if (p.food < 0) {
-    p.food = 0;
-    events.push({ type: 'famine', player: pid });
-    if (hasPassive(p, 'famineShield')) {
-      log(st, pid, `Famine strikes ${p.name}, but the storehouses hold.`);
-    } else {
-      changeRes(st, pid, 'stability', -2, events);
-      const hungry = [...p.units].filter((u) => (getCard(u.cardId).upkeep ?? 0) > 0)
-        .sort((a, b) => (getCard(b.cardId).upkeep ?? 0) - (getCard(a.cardId).upkeep ?? 0) || (getCard(b.cardId).cost - getCard(a.cardId).cost))[0];
-      if (hungry) removeUnit(st, pid, hungry.uid, events, true);
-      log(st, pid, `Famine! ${p.name} loses 2 Stability${hungry ? ` and ${getCard(hungry.cardId).name} deserts` : ''}.`);
-    }
-  }
-  changeRes(st, pid, 'legacy', inc.legacy, events);
-  events.push({ type: 'income', player: pid, goods: inc.goods, food: inc.netFood, legacy: inc.legacy });
-
-  if (!firstTurnOfGame) drawCards(st, pid, 1, events);
-  if (hasPassive(p, 'scribes') && p.hand.length < 5) drawCards(st, pid, 1, events);
+  if (paid) events.push({ type: 'resource', player: pid, res: 'prosperity', delta: -paid });
+  events.push({ type: 'income', player: pid, prosperity: inc.prosperity, growth: inc.growth, upkeep: paid });
+  if (inc.growth) addProgress(st, pid, inc.growth, events);
+  if ((st.phase as string) === 'over') return; // growth may complete the Golden Age
+  p.peek = trait(p) === 'scribes' ? { civ: topCard(p, 'civ'), mil: topCard(p, 'mil') } : null;
   checkVictory(st, events);
+}
+
+function topCard(p: PlayerState, f: Family): string | null {
+  return p.piles[f][0]?.cardId ?? null;
 }
 
 function endTurn(st: GameState, events: GameEvent[]) {
@@ -269,13 +316,15 @@ function endTurn(st: GameState, events: GameEvent[]) {
 }
 
 export function score(p: PlayerState): number {
-  return p.stability + p.legacy;
+  let total = p.stability + p.progress;
+  for (let a = 1; a < p.age; a++) total += progressNeeded(a as Age);
+  return total;
 }
 
 function decideOnPoints(st: GameState, events: GameEvent[]) {
   const [a, b] = st.players;
-  const winner: PlayerId = score(a) === score(b) ? (a.legacy >= b.legacy ? 0 : 1) : score(a) > score(b) ? 0 : 1;
-  finish(st, winner, 'Time: the chronicles favour the stronger civilization', events);
+  const winner: PlayerId = score(a) >= score(b) ? 0 : 1;
+  finish(st, winner, 'Time: the chronicles favour the more developed civilization', events);
 }
 
 function finish(st: GameState, winner: PlayerId, reason: string, events: GameEvent[]) {
@@ -290,54 +339,45 @@ function finish(st: GameState, winner: PlayerId, reason: string, events: GameEve
 
 function checkVictory(st: GameState, events: GameEvent[]) {
   if (st.phase === 'over') return;
-  const order: PlayerId[] = [st.active, other(st.active)];
-  for (const pid of order) {
-    if (st.players[other(pid)].stability <= 0) return finish(st, pid, 'Conquest: the rival civilization has collapsed', events);
-  }
-  for (const pid of order) {
-    if (st.players[pid].legacy >= RULES.legacyTarget) return finish(st, pid, 'Legacy: their name will outlast every empire', events);
+  for (const pid of [st.active, other(st.active)] as PlayerId[]) {
+    if (st.players[other(pid)].stability <= 0) return finish(st, pid, 'Conquest: the rival city has fallen', events);
   }
 }
 
 // ====================================================================== effects
 
-interface EffectCtx { self: PlayerId; targetUid?: string; }
+interface EffectCtx { self: PlayerId; targetUid?: string }
 
 function runEffects(st: GameState, effects: Effect[], ctx: EffectCtx, events: GameEvent[]) {
   const self = st.players[ctx.self];
   const opp = st.players[other(ctx.self)];
   for (const e of effects) {
+    if (st.phase === 'over') return;
     switch (e.op) {
       case 'gain': {
-        let amount = e.amount;
-        if (e.per) {
-          const w = workingBuildings(self);
-          const n = e.per.kind === 'suitBuildings'
-            ? self.buildings.filter((b) => w.has(b.uid) && getCard(b.cardId).suit === (e.per as { suit: string }).suit).length
-            : self.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).tags ?? []).includes((e.per as { tag: string }).tag)).length;
-          amount *= n;
-        }
+        const amount = e.perTag ? e.amount * countTag(self, e.perTag) : e.amount;
         const who = e.who === 'opp' ? opp.id : self.id;
-        if (e.res === 'food' && amount < 0) {
-          // Food loss cannot push below zero from an effect; it bites at the next upkeep instead.
-          amount = Math.max(amount, -st.players[who].food);
-        }
-        changeRes(st, who, e.res, amount, events);
+        if (e.res === 'progress' && amount < 0) loseProgress(st, who, -amount, events, e.who === 'opp');
+        else changeRes(st, who, e.res, amount, events);
         break;
       }
       case 'draw':
-        drawCards(st, self.id, e.ifTag ? (hasTag(self, e.ifTag) ? e.n : e.elseN ?? 0) : e.n, events);
+        if (e.family) drawFrom(st, self.id, e.family, e.ifTag ? (hasTag(self, e.ifTag) ? e.n : e.elseN ?? 0) : e.n);
+        else for (let i = 0; i < e.n; i++) drawFrom(st, self.id, self.piles.civ.length >= self.piles.mil.length ? 'civ' : 'mil', 1);
         break;
       case 'damageBuilding':
         if (ctx.targetUid) damageBuilding(st, opp.id, ctx.targetUid, e.amount, events);
+        break;
+      case 'damageCity':
+        changeRes(st, opp.id, 'stability', -e.amount, events);
         break;
       case 'unrest': {
         const b = opp.buildings.find((x) => x.uid === ctx.targetUid);
         if (b) { b.unrest = Math.max(b.unrest, e.turns); events.push({ type: 'buildingUnrest', player: opp.id, uid: b.uid }); }
         break;
       }
-      case 'unrestSuit':
-        for (const b of opp.buildings) if (getCard(b.cardId).suit === e.suit) {
+      case 'unrestTag':
+        for (const b of opp.buildings) if ((getCard(b.cardId).tags ?? []).includes(e.tag)) {
           b.unrest = Math.max(b.unrest, e.turns);
           events.push({ type: 'buildingUnrest', player: opp.id, uid: b.uid });
         }
@@ -376,7 +416,10 @@ function runEffects(st: GameState, effects: Effect[], ctx: EffectCtx, events: Ga
 
 // ====================================================================== combat
 
-export const ATTACK_REACTIONS: ReactionKind[] = ['shieldWall', 'feignedRetreat', 'turnTheTide', 'ambush'];
+/** Strength bonus every blocking unit gets for defending its own riverbank. */
+export const RIVERBANK = 1;
+
+export const ATTACK_REACTIONS: ReactionKind[] = ['shieldWall', 'feignedRetreat', 'turnTheTide', 'ambush', 'treaty'];
 export const ACTION_REACTIONS: ReactionKind[] = ['vigilantWatch', 'mirror'];
 
 /** Distribute damage to units, weakest first. Returns damage left over after every unit is dead. */
@@ -401,28 +444,34 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   for (const b of blockers) b.blocked = true;
   const attackerCards = attackers.map((u) => u.cardId);
   const blockerCards = blockers.map((u) => u.cardId);
-  const tgtCard = pend.target.kind === 'building' ? def.buildings.find((b) => b.uid === (pend.target as { uid: string }).uid)?.cardId ?? 'city' : 'city';
+  const targetUid = pend.target.kind === 'building' ? pend.target.uid : null;
+  const tgtCard = targetUid ? def.buildings.find((b) => b.uid === targetUid)?.cardId ?? 'city' : 'city';
+  let towerHits = 0, progressRaided = 0;
   const detail = (extra: { wallCard?: string | null; cancelled?: boolean; tideBack?: number }) => ({
     attackerCards, blockerCards,
     attackersLost: attackerCards.length - atk.units.filter((u) => pend.unitUids.includes(u.uid)).length,
     blockersLost: blockerCards.length - def.units.filter((u) => blockerUids.includes(u.uid)).length,
     target: tgtCard, wallCard: extra.wallCard ?? null, reaction, cancelled: extra.cancelled ?? false, tideBack: extra.tideBack ?? 0,
-    targetDestroyed: tgtCard !== 'city' && !def.buildings.some((b) => b.uid === (pend.target as { uid: string }).uid),
+    targetDestroyed: !!targetUid && !def.buildings.some((b) => b.uid === targetUid), towerHits, progressRaided,
   });
 
-  if (reaction === 'feignedRetreat') {
-    for (const u of attackers) damageUnit(st, atk.id, u, 1, events);
-    log(st, def.id, `${def.name} feigns a retreat — the attack strikes empty ground.`);
+  if (reaction === 'feignedRetreat' || reaction === 'treaty') {
+    if (reaction === 'feignedRetreat') for (const u of attackers) damageUnit(st, atk.id, u, 1, events);
+    else changeRes(st, atk.id, 'prosperity', 3, events);
+    log(st, def.id, reaction === 'treaty' ? `${def.name} offers a treaty — the attack is called off.` : `${def.name} feigns a retreat — the attack strikes empty ground.`);
     events.push({ type: 'combat', attacker: atk.id, power: 0, blocked: 0, wallAbsorbed: 0, dealt: 0, ...detail({ cancelled: true }) });
     return;
   }
-  if (reaction === 'ambush') {
-    for (const u of attackers) damageUnit(st, atk.id, u, 2, events);
-    attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
-  }
 
-  const targetBuilding = pend.target.kind === 'building' ? def.buildings.find((b) => b.uid === (pend.target as { uid: string }).uid) : undefined;
-  const walls = def.buildings.filter((b) => workingBuildings(def).has(b.uid) && (getCard(b.cardId).passives ?? []).includes('wall') && b.uid !== targetBuilding?.uid);
+  // Towers loose arrows as the attackers cross the river.
+  const w = workingBuildings(def);
+  const towers = def.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes('tower')).length;
+  if (towers) { towerHits = towers; for (const u of [...attackers]) damageUnit(st, atk.id, u, towers, events); }
+  if (reaction === 'ambush') for (const u of [...attackers]) damageUnit(st, atk.id, u, 2, events);
+  attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
+
+  const targetBuilding = targetUid ? def.buildings.find((b) => b.uid === targetUid) : undefined;
+  const walls = def.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes('wall') && b.uid !== targetBuilding?.uid);
   const structural = !!targetBuilding || walls.length > 0;
   let power = 0;
   const raiders = attackers.filter((u) => (getCard(u.cardId).keywords ?? []).includes('raider')).length;
@@ -434,12 +483,10 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   const shield = reaction === 'shieldWall' ? 1 : 0;
   const blockStr = hasPassive(def, 'blockStr') ? 1 : 0;
   let blockDmg = 0;
-  for (const b of blockers) {
-    blockDmg += unitStr(def, b) + blockStr + shield + ((getCard(b.cardId).keywords ?? []).includes('ranged') ? 1 : 0);
-  }
+  // Holding the riverbank: attackers fight their way out of the water, so every blocker gets +1 Strength.
+  for (const b of blockers) blockDmg += unitStr(def, b) + RIVERBANK + blockStr + shield + ((getCard(b.cardId).keywords ?? []).includes('ranged') ? 1 : 0);
   if (reaction === 'turnTheTide') blockDmg *= 2;
 
-  // Simultaneous clash.
   const blockerHp = blockers.reduce((s, b) => s + unitMaxHp(def, b) + shield - b.damage, 0);
   const excessBack = distribute(st, atk.id, attackers, blockDmg, 0, events);
   let overflow = distribute(st, def.id, blockers, power, shield, events);
@@ -451,37 +498,32 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   }
 
   let wallAbsorbed = 0;
-  for (const w of walls) {
+  for (const wall of walls) {
     if (overflow <= 0) break;
-    const room = maxIntegrity(w) - w.damage;
-    const take = Math.min(room, overflow);
+    const take = Math.min(maxIntegrity(wall) - wall.damage, overflow);
     wallAbsorbed += take;
     overflow -= take;
-    damageBuilding(st, def.id, w.uid, take, events);
+    damageBuilding(st, def.id, wall.uid, take, events);
   }
 
   let dealt = 0;
   if (overflow > 0) {
     if (pend.target.kind === 'city') { dealt = overflow; changeRes(st, def.id, 'stability', -overflow, events); }
-    else if (def.buildings.some((b) => b.uid === targetBuilding?.uid)) { dealt = overflow; damageBuilding(st, def.id, targetBuilding!.uid, overflow, events); }
+    else if (targetBuilding && def.buildings.some((b) => b.uid === targetBuilding.uid)) { dealt = overflow; damageBuilding(st, def.id, targetBuilding.uid, overflow, events); }
   }
-  events.push({ type: 'combat', attacker: atk.id, power, blocked: Math.min(power, blockerHp), wallAbsorbed, dealt,
-    ...detail({ wallCard: walls[0]?.cardId ?? null, tideBack: reaction === 'turnTheTide' ? excessBack : 0 }) });
 
   if (dealt > 0) {
     changeRes(st, atk.id, 'momentum', 1, events);
-    if (raiders) {
-      const steal = Math.min(def.goods, 2 * raiders);
-      if (steal) { changeRes(st, def.id, 'goods', -steal, events); changeRes(st, atk.id, 'goods', steal, events); }
-    }
-    log(st, atk.id, `${atk.name}'s assault deals ${dealt} damage${wallAbsorbed ? ` after the walls absorb ${wallAbsorbed}` : ''}.`);
+    if (raiders) progressRaided = loseProgress(st, def.id, 2 * raiders, events, true);
+    log(st, atk.id, `${atk.name}'s assault deals ${dealt} damage${wallAbsorbed ? ` after the walls absorb ${wallAbsorbed}` : ''}${progressRaided ? ` and raids ${progressRaided} Progress` : ''}.`);
   } else {
-    if (blockers.length) changeRes(st, def.id, 'momentum', 1, events);
-    log(st, def.id, `${def.name} holds the line.`);
+    if (blockers.length || wallAbsorbed) changeRes(st, def.id, 'momentum', 1, events);
+    log(st, def.id, `${def.name} holds the riverbank.`);
   }
+  events.push({ type: 'combat', attacker: atk.id, power, blocked: Math.min(power, blockerHp), wallAbsorbed, dealt,
+    ...detail({ wallCard: walls[0]?.cardId ?? null, tideBack: reaction === 'turnTheTide' ? excessBack : 0 }) });
 }
 
-/** Choose the caster's most valuable building as the target of a mirrored scheme. */
 function mirrorTarget(p: PlayerState): string | undefined {
   return [...p.buildings].sort((a, b) => getCard(b.cardId).cost - getCard(a.cardId).cost)[0]?.uid;
 }
@@ -489,7 +531,7 @@ function mirrorTarget(p: PlayerState): string | undefined {
 function resolveAction(st: GameState, pend: PendingAction, reaction: ReactionKind | null, events: GameEvent[]) {
   const card = getCard(pend.card.cardId);
   const caster = st.players[pend.caster];
-  caster.discard.push(pend.card);
+  discard(st, pend.caster, pend.card);
   const defP = st.players[other(pend.caster)];
   const targetCardId = pend.targetUid ? defP.buildings.find((b) => b.uid === pend.targetUid)?.cardId ?? null : null;
   const scheme = (outcome: 'hit' | 'foiled' | 'mirrored', mirrorTargetCardId: string | null = null) =>
@@ -514,17 +556,11 @@ function resolveAction(st: GameState, pend: PendingAction, reaction: ReactionKin
 
 // ====================================================================== validation
 
-function requireActive(st: GameState, pid: PlayerId) {
+function requireMain(st: GameState, pid: PlayerId) {
   if (st.phase === 'over') throw new RuleError('The match is over.');
-  if (st.phase !== 'main') throw new RuleError('Waiting for a response.');
   if (st.active !== pid) throw new RuleError('It is not your turn.');
-}
-
-function validateTarget(st: GameState, pid: PlayerId, card: CardDef, targetUid?: string) {
-  const spec = card.target ?? 'none';
-  if (spec === 'none') return;
-  const owner = spec === 'enemyBuilding' ? st.players[other(pid)] : st.players[pid];
-  if (!targetUid || !owner.buildings.some((b) => b.uid === targetUid)) throw new RuleError('Choose a valid building target.');
+  if (st.phase === 'draft') throw new RuleError('Pick your cards first.');
+  if (st.phase !== 'main') throw new RuleError('Waiting for a response.');
 }
 
 export function canPlayCard(st: GameState, pid: PlayerId, uid: string): string | null {
@@ -532,22 +568,27 @@ export function canPlayCard(st: GameState, pid: PlayerId, uid: string): string |
 }
 
 function checkPlay(st: GameState, pid: PlayerId, uid: string, targetUid?: string, skipTarget = true) {
-  requireActive(st, pid);
+  requireMain(st, pid);
   const p = st.players[pid];
   const inst = p.hand.find((c) => c.uid === uid);
   if (!inst) throw new RuleError('That card is not in your hand.');
   const card = getCard(inst.cardId);
-  if (card.kind === 'reaction') throw new RuleError('Reactions are played during your opponent’s turn.');
-  if (p.goods < costOf(p, card)) throw new RuleError('Not enough Goods.');
-  if (card.kind === 'building' && p.buildings.length >= RULES.maxBuildings) throw new RuleError('Your city has no room for more buildings.');
+  if (card.kind === 'reaction') throw new RuleError('Reactions are played during your rival’s turn.');
+  if (p.prosperity < costOf(p, card)) throw new RuleError('Not enough Prosperity.');
+  if ((card.kind === 'building' || card.kind === 'fort') && p.buildings.length >= RULES.maxBuildings) throw new RuleError('Your riverbank has no room for more buildings.');
   if (card.kind === 'unit' && p.units.length >= RULES.maxUnits) throw new RuleError('Your army is at full strength.');
-  if (card.kind === 'unit' && !canRecruit(p, card)) throw new RuleError(`Requires a working ${card.requiresToRecruit}.`);
+  if (card.kind === 'unit' && !canDeploy(p, card)) throw new RuleError(`Requires a working ${card.requiresToDeploy}.`);
   if (card.target && card.target !== 'none') {
     const owner = card.target === 'enemyBuilding' ? st.players[other(pid)] : p;
-    if (owner.buildings.length === 0) throw new RuleError('No valid building to target.');
-    if (!skipTarget) validateTarget(st, pid, card, targetUid);
+    if (owner.buildings.length === 0) throw new RuleError('No building to target.');
+    if (!skipTarget && (!targetUid || !owner.buildings.some((b) => b.uid === targetUid))) throw new RuleError('Choose a valid building.');
   }
   return { p, inst, card };
+}
+
+/** How many cards the active player must pick this draft (after discards). */
+export function draftNeeded(p: PlayerState, discards = 0): number {
+  return Math.max(0, RULES.handSize - (p.hand.length - discards));
 }
 
 // ====================================================================== apply
@@ -568,24 +609,38 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
       finish(st, other(pid), 'Concession', events);
       break;
     }
+    case 'draft': {
+      if (st.phase === 'over') throw new RuleError('The match is over.');
+      if (st.active !== pid) throw new RuleError('It is not your turn.');
+      if (st.phase !== 'draft') throw new RuleError('You have already picked this turn.');
+      const p = st.players[pid];
+      const dis = [...new Set(action.discard ?? [])];
+      for (const uid of dis) if (!p.hand.some((c) => c.uid === uid)) throw new RuleError('You can only discard cards from your hand.');
+      const civ = Number(action.civ), mil = Number(action.mil);
+      if (!Number.isInteger(civ) || !Number.isInteger(mil) || civ < 0 || mil < 0) throw new RuleError('Choose how many cards to take from each deck.');
+      const need = draftNeeded(p, dis.length);
+      if (civ + mil !== need) throw new RuleError(`Pick exactly ${need} card${need === 1 ? '' : 's'}.`);
+      for (const uid of dis) { const c = p.hand.find((x) => x.uid === uid)!; p.hand = p.hand.filter((x) => x.uid !== uid); discard(st, pid, c); }
+      const gotC = drawFrom(st, pid, 'civ', civ);
+      const gotM = drawFrom(st, pid, 'mil', mil + (civ - gotC)); // a short pile spills over to the other
+      const shortM = mil + (civ - gotC) - gotM;
+      if (shortM > 0) drawFrom(st, pid, 'civ', shortM);
+      p.peek = null;
+      st.phase = 'main';
+      events.push({ type: 'drafted', player: pid, civ: gotC, mil: gotM, discarded: dis.length });
+      log(st, pid, `${p.name} picks ${civ} Civilization and ${mil} Military card${civ + mil === 1 ? '' : 's'}${dis.length ? ` after discarding ${dis.length}` : ''}.`);
+      break;
+    }
     case 'endTurn': {
-      requireActive(st, pid);
+      requireMain(st, pid);
       endTurn(st, events);
       break;
     }
-    case 'rally': {
-      requireActive(st, pid);
-      const p = st.players[pid];
-      if (p.momentum < RULES.rallyCost) throw new RuleError(`Rally needs ${RULES.rallyCost} Momentum.`);
-      changeRes(st, pid, 'momentum', -RULES.rallyCost, events);
-      drawCards(st, pid, 1, events);
-      break;
-    }
     case 'signature': {
-      requireActive(st, pid);
+      requireMain(st, pid);
       const p = st.players[pid];
       const sig = getCiv(p.civ).signature;
-      if (p.signatureUsed) throw new RuleError('Your signature has already been used this turn.');
+      if (p.signatureUsed) throw new RuleError('Your Signature has already been used this turn.');
       if (p.momentum < sig.cost) throw new RuleError(`${sig.name} needs ${sig.cost} Momentum.`);
       changeRes(st, pid, 'momentum', -sig.cost, events);
       p.signatureUsed = true;
@@ -596,43 +651,43 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
     }
     case 'play': {
       const { p, inst, card } = checkPlay(st, pid, action.uid, action.targetUid, false);
-      changeRes(st, pid, 'goods', -costOf(p, card), events);
+      changeRes(st, pid, 'prosperity', -costOf(p, card), events);
       p.hand = p.hand.filter((c) => c.uid !== inst.uid);
       events.push({ type: 'cardPlayed', player: pid, cardId: card.id });
-      // Chains: matching the suit of your previous card earns Momentum, and some cards reward it further.
-      const chained = p.lastSuit !== null && p.lastSuit === card.suit;
-      const chainBonus = card.chain && p.lastSuit === card.chain.suit;
-      if (chained) { changeRes(st, pid, 'momentum', 1, events); events.push({ type: 'chain', player: pid, suit: card.suit }); }
-      p.lastSuit = card.suit;
-      log(st, pid, `${p.name} plays ${card.name}${chained ? ' (chain)' : ''}.`);
-      if (card.kind === 'building') {
+      log(st, pid, `${p.name} plays ${card.name}.`);
+      if (card.kind === 'building' || card.kind === 'fort') {
         p.buildings.push({ uid: inst.uid, cardId: card.id, damage: 0, bonusIntegrity: 0, unrest: 0 });
         events.push({ type: 'buildingRaised', player: pid, uid: inst.uid, cardId: card.id });
       } else if (card.kind === 'unit') {
         addUnit(st, pid, card.id, events, inst.uid);
       }
-      if (chainBonus) runEffects(st, card.chain!.effects, { self: pid, targetUid: action.targetUid }, events);
-      if (card.kind === 'action') {
+      if (card.family === 'civ') {
+        if (card.kind === 'development') discard(st, pid, inst);
+        if (card.progress) { events.push({ type: 'grow', player: pid, cardId: card.id, progress: card.progress }); addProgress(st, pid, card.progress, events); }
+        if (st.phase !== 'over' && card.effects) runEffects(st, card.effects, { self: pid, targetUid: action.targetUid }, events);
+      } else if (card.kind === 'tactic') {
         if (card.hostile) {
           st.phase = 'response';
           st.pending = { kind: 'action', caster: pid, card: inst, targetUid: action.targetUid };
         } else {
-          p.discard.push(inst);
+          discard(st, pid, inst);
+          events.push({ type: 'tactic', player: pid, cardId: card.id });
           runEffects(st, card.effects ?? [], { self: pid, targetUid: action.targetUid }, events);
         }
       }
       break;
     }
     case 'attack': {
-      requireActive(st, pid);
+      requireMain(st, pid);
       const p = st.players[pid];
       const opp = st.players[other(pid)];
       const uids = [...new Set(action.unitUids)];
-      if (uids.length === 0) throw new RuleError('Choose at least one unit to attack with.');
+      if (uids.length === 0) throw new RuleError('Choose at least one unit to send across the river.');
       for (const uid of uids) {
         const u = p.units.find((x) => x.uid === uid);
         if (!u) throw new RuleError('Unknown unit.');
         if (!u.ready || u.attacked) throw new RuleError(`${getCard(u.cardId).name} is not ready to attack.`);
+        if ((getCard(u.cardId).keywords ?? []).includes('guard')) throw new RuleError(`${getCard(u.cardId).name} only defends.`);
       }
       if (action.target.kind === 'building' && !opp.buildings.some((b) => b.uid === (action.target as { uid: string }).uid)) throw new RuleError('Unknown target building.');
       for (const u of p.units) if (uids.includes(u.uid)) u.attacked = true;
@@ -641,13 +696,13 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
       st.pending = { kind: 'attack', attacker: pid, unitUids: uids, target };
       events.push({ type: 'attackDeclared', player: pid, unitUids: uids, target });
       const tName = target.kind === 'city' ? 'the city' : getCard(opp.buildings.find((b) => b.uid === (target as { uid: string }).uid)!.cardId).name;
-      log(st, pid, `${p.name} attacks ${tName} with ${uids.length} unit${uids.length > 1 ? 's' : ''}.`);
+      log(st, pid, `${p.name} sends ${uids.length} unit${uids.length > 1 ? 's' : ''} across the river at ${tName}.`);
       break;
     }
     case 'respond': {
       if (st.phase !== 'response' || !st.pending) throw new RuleError('There is nothing to respond to.');
-      const attackerOrCaster = st.pending.kind === 'attack' ? st.pending.attacker : st.pending.caster;
-      const defender = other(attackerOrCaster);
+      const instigator = st.pending.kind === 'attack' ? st.pending.attacker : st.pending.caster;
+      const defender = other(instigator);
       if (pid !== defender) throw new RuleError('Only the defender may respond.');
       const def = st.players[defender];
       let reaction: ReactionKind | null = null;
@@ -658,10 +713,10 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
         if (card.kind !== 'reaction' || !card.reaction) throw new RuleError('That card is not a reaction.');
         const allowed = st.pending.kind === 'attack' ? ATTACK_REACTIONS : ACTION_REACTIONS;
         if (!allowed.includes(card.reaction)) throw new RuleError(`${card.name} cannot answer this.`);
-        if (def.goods < card.cost) throw new RuleError('Not enough Goods for that reaction.');
-        changeRes(st, defender, 'goods', -card.cost, events);
+        if (def.prosperity < card.cost) throw new RuleError('Not enough Prosperity for that reaction.');
+        changeRes(st, defender, 'prosperity', -card.cost, events);
         def.hand = def.hand.filter((c) => c.uid !== inst.uid);
-        def.discard.push(inst);
+        discard(st, defender, inst);
         reaction = card.reaction;
         changeRes(st, defender, 'momentum', 1, events);
         events.push({ type: 'reaction', player: defender, cardId: card.id, reaction });
@@ -686,7 +741,6 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
       throw new RuleError('Unknown action.');
   }
 
-  // Support changes: report buildings that stopped working because something they depend on fell.
   st.players.forEach((p, i) => {
     const now = workingBuildings(p);
     for (const uid of before[i]) {
@@ -697,7 +751,7 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
   return { state: st, events };
 }
 
-/** Who must act next: the active player in main phase, the defender during a response window. */
+/** Who must act next: the active player (draft or main), or the defender during a response window. */
 export function actingPlayer(st: GameState): PlayerId | null {
   if (st.phase === 'over') return null;
   if (st.phase === 'response' && st.pending) return other(st.pending.kind === 'attack' ? st.pending.attacker : st.pending.caster);

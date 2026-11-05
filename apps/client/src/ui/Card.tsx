@@ -1,7 +1,7 @@
 import { getCard, getCiv, type CardDef, type CivId } from '@pm/engine';
 import type { CSSProperties, ReactElement } from 'react';
 import { CardArt } from '../art/motifs';
-import { Icon, SUIT_COLOR, SUIT_LABEL } from './icons';
+import { FAMILY_COLOR, FAMILY_LABEL, Icon, ROMAN } from './icons';
 
 const NEUTRAL = { primary: '#3a3328', secondary: '#bfa06a', accent: '#efe2c4', ink: '#17130d' };
 
@@ -10,18 +10,20 @@ export function paletteFor(card: CardDef, fallbackCiv?: CivId) {
   return civ ? getCiv(civ).palette : NEUTRAL;
 }
 
-const KIND_LABEL = { building: 'Building', unit: 'Unit', action: 'Action', reaction: 'Reaction' } as const;
+const KIND_LABEL: Record<CardDef['kind'], string> = {
+  building: 'Building', development: 'Development', unit: 'Unit', fort: 'Fortification', tactic: 'Tactic', reaction: 'Reaction',
+};
 
 /** Rules text with keyword emphasis. */
 function RulesText({ text }: { text: string }) {
-  const parts = text.split(/(Hostile\.|Reaction to [^:]+:|Chain \w+:|Wall:|Ranged:|Siege:|Swift:|Raider:|Wage:|Wonder\.|Harbor\.?|Road:)/g);
+  const parts = text.split(/(Hostile\.|Reaction to [^:]+:|Wall:|Tower:|Ranged:|Siege:|Swift:|Raider:|Wonder\.|Harbor\.?|Road:|Upkeep \d+\.?)/g);
   return <>{parts.map((s, i) => (i % 2 ? <b key={i}>{s}</b> : <span key={i}>{s}</span>))}</>;
 }
 
 export interface CardProps {
   cardId: string;
-  civ?: CivId; // owner's civ, tints common cards
-  cost?: number; // effective cost (e.g. after discounts)
+  civ?: CivId;
+  cost?: number;
   size?: 'hand' | 'full';
   disabled?: boolean;
   selected?: boolean;
@@ -37,34 +39,34 @@ export function CardFace({ cardId, civ, cost, size = 'hand', disabled, selected,
   const shownCost = cost ?? card.cost;
   const vars = {
     '--c-primary': pal.primary, '--c-secondary': pal.secondary, '--c-accent': pal.accent, '--c-ink': pal.ink,
-    '--c-suit': SUIT_COLOR[card.suit], ...style,
+    '--c-family': FAMILY_COLOR[card.family], ...style,
   } as CSSProperties;
   const stats: ReactElement[] = [];
+  if (card.progress) stats.push(<span key="p" className="stat progress" title="Progress when played"><Icon name="progress" size={12} />+{card.progress}</span>);
+  if (card.growth) stats.push(<span key="g" className="stat growth" title="Progress each turn"><Icon name="growth" size={12} />+{card.growth}/t</span>);
+  if (card.income) stats.push(<span key="i" className="stat prosperity" title="Prosperity each turn"><Icon name="prosperity" size={12} />+{card.income}/t</span>);
   if (card.kind === 'unit') {
     stats.push(<span key="s" className="stat str"><Icon name="str" size={13} />{card.str}</span>);
     stats.push(<span key="h" className="stat hp"><Icon name="hp" size={13} />{card.hp}</span>);
-    if (card.upkeep) stats.push(<span key="u" className="stat food" title="Upkeep"><Icon name="food" size={12} />−{card.upkeep}</span>);
+    if (card.upkeep) stats.push(<span key="u" className="stat upkeep" title="Upkeep: Prosperity each turn"><Icon name="prosperity" size={12} />−{card.upkeep}/t</span>);
   }
-  if (card.kind === 'building') {
-    stats.push(<span key="i" className="stat integrity"><Icon name="integrity" size={13} />{card.integrity}</span>);
-    if (card.goods) stats.push(<span key="g" className="stat goods"><Icon name="goods" size={12} />+{card.goods}</span>);
-    if (card.food) stats.push(<span key="f" className="stat food"><Icon name="food" size={12} />+{card.food}</span>);
-    if (card.legacy) stats.push(<span key="l" className="stat legacy"><Icon name="legacy" size={12} />+{card.legacy}</span>);
-  }
+  if (card.kind === 'building' || card.kind === 'fort') stats.push(<span key="n" className="stat integrity"><Icon name="integrity" size={13} />{card.integrity}</span>);
   return (
     <div
-      className={`card card-${size} rarity-${rarity} kind-${card.kind} ${disabled ? 'is-disabled' : ''} ${selected ? 'is-selected' : ''} ${className ?? ''}`}
-      style={vars} onClick={onClick} role={onClick ? 'button' : undefined} aria-label={`${card.name}, cost ${shownCost}. ${card.text}`}
+      className={`card card-${size} fam-${card.family} rarity-${rarity} kind-${card.kind} ${disabled ? 'is-disabled' : ''} ${selected ? 'is-selected' : ''} ${className ?? ''}`}
+      style={vars} onClick={onClick} role={onClick ? 'button' : undefined} aria-label={`${card.name}, ${FAMILY_LABEL[card.family]}, Age ${card.age}, cost ${shownCost}. ${card.text}`}
     >
       <div className="card-frame">
         <div className="card-art"><CardArt motif={card.art} palette={pal} /></div>
         <div className="card-sheen" />
         <div className={`card-cost ${shownCost < card.cost ? 'discounted' : ''}`}>{shownCost}</div>
-        <div className="card-suit" title={SUIT_LABEL[card.suit]}><Icon name={card.suit} size={size === 'full' ? 18 : 13} /></div>
+        <div className="card-age" title={`${FAMILY_LABEL[card.family]} · Age ${ROMAN[card.age - 1]}`}>
+          <Icon name={card.family} size={size === 'full' ? 15 : 11} /><span>{ROMAN[card.age - 1]}</span>
+        </div>
         <div className="card-body">
           <div className="card-name">{card.name}</div>
           <div className="card-type">{KIND_LABEL[card.kind]}{card.civ ? ` · ${getCiv(card.civ).name.replace('Kingdom of ', '')}` : ''}{rarity !== 'common' ? ` · ${rarity}` : ''}</div>
-          <div className="card-text"><RulesText text={card.text} />{card.chain && <> <RulesText text={card.chain.text} /></>}</div>
+          <div className="card-text"><RulesText text={card.text} /></div>
           {size === 'full' && card.flavor && <div className="card-flavor">{card.flavor}</div>}
           {stats.length > 0 && <div className="card-stats">{stats}</div>}
         </div>
@@ -73,8 +75,8 @@ export function CardFace({ cardId, civ, cost, size = 'hand', disabled, selected,
   );
 }
 
-/** Face-down card back used for the opponent's hand. */
-export function CardBack({ civ, style }: { civ: CivId; style?: CSSProperties }) {
+/** Face-down card back: shows only the deck it came from. */
+export function CardBack({ civ, family, style }: { civ: CivId; family?: 'civ' | 'mil'; style?: CSSProperties }) {
   const pal = getCiv(civ).palette;
-  return <div className="card-back" style={{ '--c-primary': pal.primary, '--c-secondary': pal.secondary, ...style } as CSSProperties} />;
+  return <div className={`card-back ${family ? `back-${family}` : ''}`} style={{ '--c-primary': pal.primary, '--c-secondary': pal.secondary, ...style } as CSSProperties} />;
 }

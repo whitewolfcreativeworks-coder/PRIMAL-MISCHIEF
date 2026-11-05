@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { modelFor, type HoloModel } from './models';
+import { cityModel, modelFor, type HoloModel } from './models';
 
 /*
  * The hologram theater: a small projected stage that acts out what just
@@ -13,7 +13,7 @@ export const OPP_COLOR = 0xffae6a;
 export interface Vignette {
   duration: number; // seconds at pace 1
   caption: string;
-  tone?: 'mine' | 'theirs' | 'reverse' | 'neutral';
+  tone?: 'mine' | 'theirs' | 'reverse' | 'age' | 'neutral';
   setup(stage: Stage): void;
   update(stage: Stage, t: number): void;
 }
@@ -131,6 +131,21 @@ export class Stage {
     this.particles.push({ points, vel, life, gravity: opts.gravity ?? 1.2, age: 0, ttl: opts.ttl ?? 0.9 });
   }
 
+  /** A whole city at a given Age (see models.cityModel), revealed like any other model. */
+  cityAt(civ: string, age: number, color: number, pos: [number, number, number], scale = 1): HoloModel {
+    const m = cityModel(civ, age, color);
+    m.group.position.set(...pos);
+    m.group.scale.setScalar(scale);
+    m.uniforms.uReveal.value = -1;
+    this.root.add(m.group);
+    this.models.push(m);
+    return m;
+  }
+
+  private fired = new Set<string>();
+  /** Run a one-off effect once per scene. */
+  once(key: string, fn: () => void) { if (!this.fired.has(key)) { this.fired.add(key); fn(); } }
+
   /** A floating text label (damage numbers, outcomes). */
   label(text: string, pos: [number, number, number], color = '#ffffff', ttl = 1.2, size = 0.32) {
     const c = document.createElement('canvas');
@@ -152,6 +167,7 @@ export class Stage {
   tick(dt: number) {
     this.time += dt;
     this.beamMat.uniforms.uTime.value = this.time;
+    if (this.riverMat) this.riverMat.uniforms.uTime.value = this.time;
     for (const m of this.models) m.uniforms.uTime.value = this.time;
     for (const ps of this.particles) {
       ps.age += dt;
@@ -184,7 +200,35 @@ export class Stage {
     for (const m of this.models) m.uniforms.uOpacity.value = Math.min(m.uniforms.uOpacity.value, 1 - p);
   }
 
+  /** Rotation of the scene: +π/2 = action flows away from the viewer (you attack), −π/2 = toward the viewer. */
+  facing = 0;
+
+  /** A hologram river running across the stage at scene-x = center (width w). */
+  river(center = -0.25, w = 0.42) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: `uniform float uTime; varying vec2 vUv;
+        void main(){
+          float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
+          float flow = 0.5 + 0.5*sin(vUv.y*46.0 - uTime*3.0 + sin(vUv.x*9.0 + uTime)*1.6);
+          float lines = smoothstep(0.86, 1.0, flow);
+          float fade = smoothstep(0.0, 0.25, vUv.y) * smoothstep(1.0, 0.75, vUv.y);
+          gl_FragColor = vec4(vec3(0.35, 0.85, 1.0) * (0.35 + lines*1.4), (0.10 + lines*0.45) * edge * fade);
+        }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    });
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(w, 2.0, 1, 1), mat);
+    strip.rotation.x = -Math.PI / 2;
+    strip.position.set(center, 0.005, 0);
+    this.root.add(strip);
+    this.riverMat = mat;
+  }
+  private riverMat: THREE.ShaderMaterial | null = null;
+
   clear() {
+    this.riverMat = null;
+    this.fired.clear();
     for (const m of this.models) { this.root.remove(m.group); m.dispose(); }
     this.models = [];
     for (const ps of this.particles) { this.root.remove(ps.points); ps.points.geometry.dispose(); (ps.points.material as THREE.Material).dispose(); }
@@ -195,6 +239,7 @@ export class Stage {
     this.root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.geometry?.dispose(); (m.material as THREE.Material)?.dispose?.(); } });
     this.root.clear();
     this.root.rotation.set(0, 0, 0);
+    this.facing = 0;
   }
 }
 
@@ -225,7 +270,7 @@ export class Theater {
 
   enqueue(v: Vignette) {
     // Keep up with the game: never let more than three scenes back up.
-    if (this.queue.length >= 3) this.queue.shift();
+    if (this.queue.length >= 6) this.queue.shift();
     this.queue.push(v);
     if (!this.current) this.next();
   }
@@ -263,7 +308,7 @@ export class Theater {
     this.last = now;
     this.t += dt;
     this.resize();
-    this.stage.root.rotation.y = Math.sin(this.stage.time * 0.35) * 0.18; // gentle orbit for depth
+    this.stage.root.rotation.y = this.stage.facing + Math.sin(this.stage.time * 0.35) * 0.12; // scene facing + gentle orbit
     try {
       v.update(this.stage, Math.min(this.t, v.duration));
       this.stage.tick(dt);
