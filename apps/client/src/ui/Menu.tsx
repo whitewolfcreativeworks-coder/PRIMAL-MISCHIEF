@@ -4,6 +4,9 @@ import { CivEmblem } from '../art/motifs';
 import { CardFace } from './Card';
 import { Icon } from './icons';
 
+/** Build flag for the single-file offline edition (no game server, vs-computer only). */
+export const OFFLINE = import.meta.env.VITE_OFFLINE === '1';
+
 // ---------------------------------------------------------------- persistence
 
 export function loadDeck(civ: CivId): string[] {
@@ -34,9 +37,9 @@ export function Title({ onLocal, onOnline, onHelp, resumable, onResume, name, se
         <input value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="Ruler" />
       </label>
       <div className="title-actions">
-        {resumable && <button className="btn primary big" onClick={onResume}>Resume online match</button>}
+        {!OFFLINE && resumable && <button className="btn primary big" onClick={onResume}>Resume online match</button>}
         <button className="btn primary big" onClick={onLocal}>Play the computer</button>
-        <button className="btn big" onClick={onOnline}>Challenge a friend online</button>
+        {!OFFLINE && <button className="btn big" onClick={onOnline}>Challenge a friend online</button>}
         <button className="btn ghost" onClick={onHelp}><Icon name="info" /> How to play</button>
       </div>
       <p className="fine">A turn-based card game of ancient civilizations · No timers · No purchases</p>
@@ -87,7 +90,7 @@ export function LocalSetup({ civ, setCiv, onBack, onStart, onDeck }: {
   onStart: (opts: { aiCiv: CivId | 'random'; difficulty: Difficulty }) => void;
 }) {
   const [aiCiv, setAiCiv] = useState<CivId | 'random'>('random');
-  const [difficulty, setDifficulty] = useState<Difficulty>(() => (localStorage.getItem('pm.difficulty') as Difficulty) || 'normal');
+  const [difficulty, setDifficulty] = useState<Difficulty>(() => { try { return (localStorage.getItem('pm.difficulty') as Difficulty) || 'normal'; } catch { return 'normal'; } });
   return (
     <CivSelect title="Choose your civilization" chosen={civ} onChoose={setCiv} onBack={onBack} onDeck={onDeck}>
       <div className="setup-row">
@@ -100,7 +103,7 @@ export function LocalSetup({ civ, setCiv, onBack, onStart, onDeck }: {
         <div className="seg" role="radiogroup" aria-label="Difficulty">
           {(['easy', 'normal', 'hard'] as Difficulty[]).map((d) => (
             <button key={d} role="radio" aria-checked={difficulty === d} className={difficulty === d ? 'on' : ''}
-              onClick={() => { setDifficulty(d); localStorage.setItem('pm.difficulty', d); }}>{d}</button>
+              onClick={() => { setDifficulty(d); try { localStorage.setItem('pm.difficulty', d); } catch { /* storage unavailable */ } }}>{d}</button>
           ))}
         </div>
         <button className="btn primary big" disabled={!civ} onClick={() => onStart({ aiCiv, difficulty })}>Begin</button>

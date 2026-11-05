@@ -28,6 +28,15 @@ Open `http://<your-computer's-LAN-IP>:5173` on an iPad on the same Wi-Fi to
 play on the tablet. For online play, both devices must reach the server;
 the client automatically talks to port 8787 on the same host in dev.
 
+### Single-file offline edition (vs computer, no server)
+
+```bash
+node scripts/build-standalone.mjs   # → apps/client/dist-standalone/primal-mischief.html
+```
+
+One ~740 KB HTML file with everything inlined. Open it in any browser,
+including Safari on iPad. Online play is hidden in this edition.
+
 ### Production build (single process)
 
 ```bash
