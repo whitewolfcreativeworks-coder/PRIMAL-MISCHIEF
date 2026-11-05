@@ -226,6 +226,24 @@ describe('combat and counterplay', () => {
     expect(s.players[0].buildings.some((b) => b.uid === myTemple)).toBe(false); // 3 damage destroys a temple
     expect(res.events.some((e) => e.type === 'reversed')).toBe(true);
   });
+  it('reports combat and scheme details for presentation', () => {
+    const st = fresh();
+    const a = unit(st, 0, 'militia');
+    const d1 = unit(st, 1, 'spearmen'), d2 = unit(st, 1, 'spearmen');
+    st.players[1].goods = 5;
+    const r = give(st, 1, 'turnTheTide');
+    let s = applyAction(st, 0, { type: 'attack', unitUids: [a], target: { kind: 'city' } }).state;
+    const res = applyAction(s, 1, { type: 'respond', reactionUid: r, blockerUids: [d1, d2] });
+    const c = res.events.find((e) => e.type === 'combat');
+    expect(c).toMatchObject({ attackerCards: ['militia'], blockerCards: ['spearmen', 'spearmen'], attackersLost: 1, blockersLost: 0, target: 'city', reaction: 'turnTheTide', tideBack: 6, cancelled: false });
+    const st2 = fresh();
+    const farm = build(st2, 1, 'farm');
+    st2.players[0].goods = 10;
+    s = applyAction(st2, 0, { type: 'play', uid: give(st2, 0, 'arson'), targetUid: farm }).state;
+    const res2 = applyAction(s, 1, { type: 'respond', blockerUids: [] });
+    expect(res2.events.find((e) => e.type === 'scheme')).toMatchObject({ cardId: 'arson', targetCardId: 'farm', outcome: 'hit' });
+  });
+
   it('a reaction cannot answer the wrong kind of threat', () => {
     const { st, a1 } = attackSetup();
     st.players[1].goods = 5;

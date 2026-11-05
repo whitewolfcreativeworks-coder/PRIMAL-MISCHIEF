@@ -1,11 +1,13 @@
 import { CIVS, type CivId, type Difficulty } from '@pm/engine';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { defaultServerUrl, LocalMatch, OnlineMatch, savedRoom, type AnyMatch } from './game/match';
+import { defaultServerUrl, LocalMatch, OnlineMatch, savedRoom, TutorialMatch, type AnyMatch } from './game/match';
+import { LESSONS } from './game/lessons';
+import type { Lesson } from './game/tutorial';
 import { Board } from './ui/Board';
 import { HowToPlay } from './ui/HowToPlay';
-import { DeckBuilder, loadDeck, LocalSetup, Lobby, Title, WaitingRoom } from './ui/Menu';
+import { Academy, DeckBuilder, loadDeck, LocalSetup, Lobby, markLessonDone, Title, WaitingRoom } from './ui/Menu';
 
-type Screen = 'title' | 'local' | 'online' | 'deck' | 'match';
+type Screen = 'title' | 'local' | 'online' | 'deck' | 'match' | 'academy';
 
 const stored = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 const store = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
@@ -70,10 +72,18 @@ export function App() {
     setScreen('match');
   }
 
+  function startLesson(l: Lesson) {
+    match?.dispose();
+    setMatch(new TutorialMatch(l));
+    setScreen('match');
+  }
+
   function exit() {
+    const lesson = match instanceof TutorialMatch ? match.runner : null;
+    if (lesson && lesson.coach.mode === 'done') markLessonDone(lesson.lesson.civ);
     if (match instanceof OnlineMatch) match.leave(); else match?.dispose();
     setMatch(null);
-    setScreen('title');
+    setScreen(lesson ? 'academy' : 'title');
   }
 
   const openDeck = (c: CivId, from: Screen) => { setDeckCiv(c); setBack(from); setScreen('deck'); };
@@ -94,12 +104,14 @@ export function App() {
   } else if (screen === 'online') {
     body = <Lobby civ={civ} setCiv={setCiv} onBack={() => setScreen('title')} onDeck={(c) => openDeck(c, 'online')} initialCode={inviteCode}
       onCreate={() => startOnline('create')} onJoin={(code) => startOnline('join', code)} serverUrl={serverUrl} setServerUrl={setServerUrl} />;
+  } else if (screen === 'academy') {
+    body = <Academy lessons={LESSONS} onStart={startLesson} onBack={() => setScreen('title')} />;
   } else if (screen === 'deck') {
     body = <DeckBuilder civ={deckCiv} onDone={() => setScreen(back)} />;
   } else {
     body = (
       <>
-        <Title onLocal={() => setScreen('local')} onOnline={() => setScreen('online')} onHelp={() => setHelp(true)}
+        <Title onAcademy={() => setScreen('academy')} onLocal={() => setScreen('local')} onOnline={() => setScreen('online')} onHelp={() => setHelp(true)}
           resumable={!!savedRoom()} onResume={resume} name={name} setName={setName} />
         <div className="pace-ctl">
           <span>Animations</span>

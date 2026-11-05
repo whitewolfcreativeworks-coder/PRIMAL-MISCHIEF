@@ -399,11 +399,21 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   let attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
   const blockers = def.units.filter((u) => blockerUids.includes(u.uid));
   for (const b of blockers) b.blocked = true;
+  const attackerCards = attackers.map((u) => u.cardId);
+  const blockerCards = blockers.map((u) => u.cardId);
+  const tgtCard = pend.target.kind === 'building' ? def.buildings.find((b) => b.uid === (pend.target as { uid: string }).uid)?.cardId ?? 'city' : 'city';
+  const detail = (extra: { wallCard?: string | null; cancelled?: boolean; tideBack?: number }) => ({
+    attackerCards, blockerCards,
+    attackersLost: attackerCards.length - atk.units.filter((u) => pend.unitUids.includes(u.uid)).length,
+    blockersLost: blockerCards.length - def.units.filter((u) => blockerUids.includes(u.uid)).length,
+    target: tgtCard, wallCard: extra.wallCard ?? null, reaction, cancelled: extra.cancelled ?? false, tideBack: extra.tideBack ?? 0,
+    targetDestroyed: tgtCard !== 'city' && !def.buildings.some((b) => b.uid === (pend.target as { uid: string }).uid),
+  });
 
   if (reaction === 'feignedRetreat') {
     for (const u of attackers) damageUnit(st, atk.id, u, 1, events);
     log(st, def.id, `${def.name} feigns a retreat — the attack strikes empty ground.`);
-    events.push({ type: 'combat', attacker: atk.id, power: 0, blocked: 0, wallAbsorbed: 0, dealt: 0 });
+    events.push({ type: 'combat', attacker: atk.id, power: 0, blocked: 0, wallAbsorbed: 0, dealt: 0, ...detail({ cancelled: true }) });
     return;
   }
   if (reaction === 'ambush') {
@@ -455,7 +465,8 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
     if (pend.target.kind === 'city') { dealt = overflow; changeRes(st, def.id, 'stability', -overflow, events); }
     else if (def.buildings.some((b) => b.uid === targetBuilding?.uid)) { dealt = overflow; damageBuilding(st, def.id, targetBuilding!.uid, overflow, events); }
   }
-  events.push({ type: 'combat', attacker: atk.id, power, blocked: Math.min(power, blockerHp), wallAbsorbed, dealt });
+  events.push({ type: 'combat', attacker: atk.id, power, blocked: Math.min(power, blockerHp), wallAbsorbed, dealt,
+    ...detail({ wallCard: walls[0]?.cardId ?? null, tideBack: reaction === 'turnTheTide' ? excessBack : 0 }) });
 
   if (dealt > 0) {
     changeRes(st, atk.id, 'momentum', 1, events);
@@ -479,7 +490,12 @@ function resolveAction(st: GameState, pend: PendingAction, reaction: ReactionKin
   const card = getCard(pend.card.cardId);
   const caster = st.players[pend.caster];
   caster.discard.push(pend.card);
+  const defP = st.players[other(pend.caster)];
+  const targetCardId = pend.targetUid ? defP.buildings.find((b) => b.uid === pend.targetUid)?.cardId ?? null : null;
+  const scheme = (outcome: 'hit' | 'foiled' | 'mirrored', mirrorTargetCardId: string | null = null) =>
+    events.push({ type: 'scheme', caster: pend.caster, cardId: card.id, targetCardId, outcome, mirrorTargetCardId });
   if (reaction === 'vigilantWatch') {
+    scheme('foiled');
     log(st, other(pend.caster), `${card.name} is discovered and foiled.`);
     return;
   }
@@ -488,9 +504,11 @@ function resolveAction(st: GameState, pend: PendingAction, reaction: ReactionKin
     log(st, defender, `${card.name} is turned back on ${caster.name}!`);
     events.push({ type: 'reversed', player: defender, cardId: card.id });
     const t = card.target === 'enemyBuilding' ? mirrorTarget(caster) : pend.targetUid;
+    scheme('mirrored', t ? caster.buildings.find((b) => b.uid === t)?.cardId ?? null : null);
     runEffects(st, card.effects ?? [], { self: defender, targetUid: t }, events);
     return;
   }
+  scheme('hit');
   runEffects(st, card.effects ?? [], { self: pend.caster, targetUid: pend.targetUid }, events);
 }
 

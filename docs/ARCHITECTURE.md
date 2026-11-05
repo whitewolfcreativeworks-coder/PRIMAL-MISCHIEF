@@ -15,6 +15,8 @@ primal-mischief/
 │   ├── src/game/match.ts   LocalMatch (vs AI, in-browser) and OnlineMatch (WebSocket)
 │   ├── src/ui/             Board, cards, menus, deck builder, lobby
 │   ├── src/art/motifs.tsx  Procedural SVG card art and civ emblems (original)
+│   ├── src/holo/           Three.js hologram theater: shader, miniatures, scenes
+│   ├── src/game/tutorial.ts, lessons.ts  Academy lesson framework + lessons
 │   └── src/audio.ts        Synthesized Web Audio cues (no audio assets)
 └── apps/server/          Node authoritative game server (ws)
     ├── src/server.ts       Rooms, seats, validation, redaction, reconnection
@@ -51,6 +53,15 @@ Researched candidates (Nov 2026):
 | **React 19 + Vite 8** | MIT | Chosen. Mature, tiny runtime cost here (111 KB gzipped total), fast iteration. |
 | **ws** | MIT | Chosen for the server: minimal, battle-tested WebSocket library. Socket.IO was unnecessary weight. |
 | **Vitest** | MIT | Chosen for tests. |
+
+**Update (v0.2):** Three.js is now used for one focused job — the hologram
+theater (`src/holo/`). The table, cards and text stay DOM/CSS for
+readability; Three.js renders only while a scene plays, so idle cost is
+zero. Scenes are built from the engine's presentation events (`combat`,
+`scheme`, `buildingRaised`, `buildingDestroyed`, `signature`,
+`gameOver`), which carry enough detail (who fought, who fell, which
+reaction) to stage the action. The original rationale below still applies
+to the board itself.
 
 The "3D" feel comes from CSS perspective on the tabletop, upright building
 tiles, layered lighting and event-driven animations (rise, fracture,
@@ -118,3 +129,27 @@ hidden information.
   entry, then run `npm test` and `npm run simulate`.
 - **A new mechanic:** add an `Effect` op or `Passive` in `types.ts` and
   handle it in `engine.ts`. Keep effects finite and non-recursive.
+
+## Hologram theater
+
+- `holo/material.ts` — additive hologram shader: fresnel rim, drifting
+  scanlines, flicker, bottom-up materialize sweep, glitch and heat tint.
+- `holo/models.ts` — procedural miniatures (infantry, archers, slingers,
+  cavalry, rams, battle wagons, ships; pyramids, ziggurat, stele, temples,
+  walls, terraces, harbors…). Built from primitives so they can shatter.
+- `holo/theater.ts` — renderer, projector disc and light cone, particles,
+  floating labels, a scene queue (max 3 pending, so it keeps up).
+- `holo/vignettes.ts` — scripted scenes: battles staged differently for
+  each reaction (Ambush, Shield Wall, Feigned Retreat, Turn the Tide),
+  schemes including the Mirror reversal, construction, collapse,
+  signatures, victory, and per-card looping previews for the close-up.
+- In vs-computer matches the AI waits for a scene to finish. Online, scenes
+  queue and drop the oldest if they fall behind. Animation "Off" disables
+  holograms; "Fast" plays them at 1.8× and skips minor ones.
+
+## Academy
+
+`game/tutorial.ts` runs a lesson: a scripted board, steps that explain
+(info) or ask for one move (do), scripted rival moves, and a `solution` per
+step. `apps/client/test/lessons.test.ts` plays every lesson through its
+solutions and checks off-script moves are refused.

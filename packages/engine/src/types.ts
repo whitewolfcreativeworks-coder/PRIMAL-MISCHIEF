@@ -222,7 +222,14 @@ export type GameEvent =
   | { type: 'attackDeclared'; player: PlayerId; unitUids: string[]; target: AttackTarget }
   | { type: 'reaction'; player: PlayerId; cardId: string; reaction: ReactionKind }
   | { type: 'reversed'; player: PlayerId; cardId: string }
-  | { type: 'combat'; attacker: PlayerId; power: number; blocked: number; wallAbsorbed: number; dealt: number }
+  | {
+      type: 'combat'; attacker: PlayerId; power: number; blocked: number; wallAbsorbed: number; dealt: number;
+      // Detail for presentation (hologram battle scenes):
+      attackerCards: string[]; blockerCards: string[]; attackersLost: number; blockersLost: number;
+      target: string; // 'city' or the target building's card id
+      wallCard: string | null; reaction: ReactionKind | null; cancelled: boolean; tideBack: number; targetDestroyed: boolean;
+    }
+  | { type: 'scheme'; caster: PlayerId; cardId: string; targetCardId: string | null; outcome: 'hit' | 'foiled' | 'mirrored'; mirrorTargetCardId: string | null }
   | { type: 'cityDamaged'; player: PlayerId; amount: number }
   | { type: 'resource'; player: PlayerId; res: Resource; delta: number }
   | { type: 'signature'; player: PlayerId; name: string }

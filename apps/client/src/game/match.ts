@@ -3,6 +3,8 @@ import {
   type Action, type ClientMsg, type CivId, type Difficulty, type GameEvent, type GameState, type PlayerId, type ServerMsg,
 } from '@pm/engine';
 
+import { TutorialRunner, type CoachState, type Lesson } from './tutorial';
+
 export type MatchStatus = 'live' | 'connecting' | 'waiting' | 'reconnecting' | 'closed' | 'error';
 
 export interface Snapshot {
@@ -17,6 +19,7 @@ export interface Snapshot {
   error?: string; // transient rule error message
   errorSeq: number;
   thinking: boolean; // opponent (AI or human) is acting
+  coach?: CoachState; // present in Academy lessons
 }
 
 type Listener = () => void;
@@ -76,6 +79,9 @@ export class LocalMatch extends Match {
     } catch (e) { this.fail((e as Error).message); }
   }
   setPace(p: number) { this.setup.pace = p; }
+  /** While the gate returns true (a hologram scene is playing) the AI waits its turn. */
+  private gate: () => boolean = () => false;
+  setGate(fn: () => boolean) { this.gate = fn; }
   private scheduleAI() {
     if (this.timer) clearTimeout(this.timer);
     if (actingPlayer(this.state) !== 1) return;
@@ -85,6 +91,7 @@ export class LocalMatch extends Match {
   private stepAI() {
     this.timer = null;
     if (actingPlayer(this.state) !== 1) return;
+    if (this.gate()) { this.timer = setTimeout(() => this.stepAI(), 150); return; }
     if (this.state.turn !== this.aiTurn) { this.aiTurn = this.state.turn; this.aiCount = 0; }
     let action: Action = chooseAction(this.state, 1, this.setup.difficulty);
     if (this.state.phase === 'main' && ++this.aiCount > AI_ACTIONS_PER_TURN) action = { type: 'endTurn' };
@@ -212,4 +219,31 @@ export class OnlineMatch extends Match {
   }
 }
 
-export type AnyMatch = LocalMatch | OnlineMatch;
+// ============================================================ academy lesson
+
+export class TutorialMatch extends Match {
+  runner: TutorialRunner;
+  private gate: () => boolean = () => false;
+  constructor(lesson: Lesson) {
+    super(false);
+    this.runner = new TutorialRunner(lesson);
+    this.runner.onEvents = (events) => this.publish(events);
+    // Publishing the coach right after a scripted move keeps the "waiting" state in sync.
+    this.runner.onError = (m) => this.fail(m);
+    this.runner.whenIdle = (fn) => {
+      const wait = () => { if (this.gate()) setTimeout(wait, 150); else { fn(); this.set({ coach: this.runner.coach }); } };
+      setTimeout(wait, 250);
+    };
+    this.publish([]);
+  }
+  setGate(fn: () => boolean) { this.gate = fn; }
+  private publish(events: GameEvent[]) {
+    this.set({ view: this.runner.view(), events, eventSeq: this.snapshot.eventSeq + 1, status: 'live', thinking: false, coach: this.runner.coach });
+  }
+  send(action: Action) { if (this.runner.send(action)) this.set({ coach: this.runner.coach }); }
+  next() { this.runner.next(); this.set({ coach: this.runner.coach }); }
+  solve() { this.runner.solve(); this.set({ coach: this.runner.coach }); }
+  dispose() { this.listeners.clear(); }
+}
+
+export type AnyMatch = LocalMatch | OnlineMatch | TutorialMatch;

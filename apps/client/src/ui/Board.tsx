@@ -6,10 +6,13 @@ import {
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { CardArt, CivEmblem } from '../art/motifs';
 import { isMuted, play, setMuted } from '../audio';
-import type { AnyMatch } from '../game/match';
+import { LocalMatch, TutorialMatch, type AnyMatch } from '../game/match';
+import type { Highlight } from '../game/tutorial';
+import { HoloStage } from '../holo/HoloStage';
 import { CardBack, CardFace, paletteFor } from './Card';
 import { Icon } from './icons';
 import { HowToPlay } from './HowToPlay';
+import { Inspector } from './Inspector';
 
 type Fx = Record<string, string>;
 interface Ghost { key: string; owner: PlayerId; cardId: string; kind: 'building' | 'unit' }
@@ -28,7 +31,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const [reaction, setReaction] = useState<string | null>(null);
   const [inspect, setInspect] = useState<{ cardId: string; owner: PlayerId; note?: string } | null>(null);
   const [showLog, setShowLog] = useState(false);
-  const [showHelp, setShowHelp] = useState(() => { try { return !localStorage.getItem('pm.seenHelp'); } catch { return false; } });
+  const [showHelp, setShowHelp] = useState(() => { if (match instanceof TutorialMatch) return false; try { return !localStorage.getItem('pm.seenHelp'); } catch { return false; } });
   const [confirmSig, setConfirmSig] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [fx, setFx] = useState<Fx>({});
@@ -38,6 +41,13 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const [toast, setToast] = useState<string | null>(null);
   const [shake, setShake] = useState<PlayerId | null>(null);
   const counter = useRef(0);
+  const holoBusy = useRef(false);
+  useEffect(() => { if (match instanceof LocalMatch || match instanceof TutorialMatch) match.setGate(() => holoBusy.current); }, [match]);
+  const coach = snap.coach;
+  const hl = (h: Highlight[] | undefined) => h ?? [];
+  const glowHand = (cardId: string) => hl(coach?.step.highlight).some((h) => h.kind === 'hand' && h.cardId === cardId);
+  const glowPiece = (kind: 'unit' | 'building', owner: 'me' | 'opp', cardId: string) => hl(coach?.step.highlight).some((h) => h.kind === kind && h.owner === owner && h.cardId === cardId);
+  const glowBtn = (name: string) => (hl(coach?.step.highlight).some((h) => h.kind === 'button' && h.name === name) ? 'coach-glow' : '');
 
   const me = snap.me;
   const opp = other(me);
@@ -79,10 +89,10 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
           break;
         case 'combat': if (e.power) sounds.add('clash'); break;
         case 'cityDamaged': add(e.player === me ? 'me' : 'opp', `−${e.amount}`, 'red'); setShake(e.player); setTimeout(() => setShake(null), 500); break;
-        case 'reaction': ban = { key: ++counter.current, text: getCard(e.cardId).name, sub: e.player === me ? 'Your reaction' : `${view.players[e.player].name} reacts!`, tone: 'violet' }; sounds.add('reaction'); break;
-        case 'reversed': ban = { key: ++counter.current, text: 'Reversed!', sub: `${getCard(e.cardId).name} strikes its caster`, tone: 'violet' }; sounds.add('reaction'); break;
+        case 'reaction': if (pace > 0) { sounds.add('reaction'); break; } ban = { key: ++counter.current, text: getCard(e.cardId).name, sub: e.player === me ? 'Your reaction' : `${view.players[e.player].name} reacts!`, tone: 'violet' }; sounds.add('reaction'); break;
+        case 'reversed': if (pace > 0) break; ban = { key: ++counter.current, text: 'Reversed!', sub: `${getCard(e.cardId).name} strikes its caster`, tone: 'violet' }; sounds.add('reaction'); break;
         case 'chain': add(e.player === me ? 'me' : 'opp', 'Chain +1', 'gold'); sounds.add('chain'); break;
-        case 'signature': ban = { key: ++counter.current, text: e.name, sub: view.players[e.player].name, tone: 'gold' }; sounds.add('reaction'); break;
+        case 'signature': if (pace > 0) { sounds.add('reaction'); break; } ban = { key: ++counter.current, text: e.name, sub: view.players[e.player].name, tone: 'gold' }; sounds.add('reaction'); break;
         case 'resource': if (e.res === 'goods' && e.delta > 0 && e.player === me) sounds.add('coin'); break;
         case 'famine': add(e.player === me ? 'me' : 'opp', 'Famine', 'red'); break;
         case 'turnStart': if (!ban) ban = { key: ++counter.current, text: e.player === me ? 'Your turn' : `${view.players[e.player].name}'s turn`, tone: 'plain' }; sounds.add('turn'); break;
@@ -111,7 +121,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
 
   // Auto-pass a response window when there is literally nothing we could do.
   useEffect(() => {
-    if (!responding || !view) return;
+    if (!responding || !view || snap.coach) return;
     if (availableBlockers(view, me).length === 0 && playableReactions(view, me).length === 0) {
       const t = setTimeout(() => match.send({ type: 'respond', blockerUids: [] }), sleepMs(pace, 900));
       return () => clearTimeout(t);
@@ -210,7 +220,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     return (
       <div className="row buildings">
         {p.buildings.map((b) => (
-          <BuildingTile key={b.uid} b={b} p={p} working={w.has(b.uid)} fx={fx[b.uid]} targetable={!!isTarget} threatened={threatened === b.uid}
+          <BuildingTile key={b.uid} glow={glowPiece('building', owner === me ? 'me' : 'opp', b.cardId)} b={b} p={p} working={w.has(b.uid)} fx={fx[b.uid]} targetable={!!isTarget} threatened={threatened === b.uid}
             onTap={() => tapBuilding(owner, b)} floaters={floatFor(b.uid)} />
         ))}
         {ghosts.filter((g) => g.owner === owner && g.kind === 'building').map((g) => <GhostTile key={g.key} cardId={g.cardId} />)}
@@ -225,7 +235,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     return (
       <div className="row units">
         {p.units.map((u) => (
-          <UnitToken key={u.uid} u={u} p={p} fx={fx[u.uid]}
+          <UnitToken key={u.uid} glow={glowPiece('unit', owner === me ? 'me' : 'opp', u.cardId)} u={u} p={p} fx={fx[u.uid]}
             canAttack={owner === me && ready.has(u.uid)} selected={attackers.includes(u.uid) || blockers.includes(u.uid)}
             canBlock={owner === me && canBlock.has(u.uid)} attacking={attacking.includes(u.uid)}
             onTap={() => tapUnit(owner, u)} />
@@ -264,6 +274,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       </div>
 
       <main className="table">
+        <HoloStage events={snap.events} eventSeq={snap.eventSeq} view={view} me={me} pace={pace} onBusy={(b) => { holoBusy.current = b; }} />
         <section className={`side side-opp ${shake === opp ? 'shake' : ''}`}>
           {renderBuildings(opp)}
           {renderUnits(opp)}
@@ -274,7 +285,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
           <div className="mid-actions">
             {myMain && attackers.length > 0 && (
               <>
-                <button className="btn danger" onClick={() => { send({ type: 'attack', unitUids: attackers, target: { kind: 'city' } }); setAttackers([]); }}>
+                <button className={`btn danger ${glowBtn('attackCity')}`} onClick={() => { send({ type: 'attack', unitUids: attackers, target: { kind: 'city' } }); setAttackers([]); }}>
                   <Icon name="city" size={16} /> Attack city
                 </button>
                 <span className="hint">or tap an enemy building</span>
@@ -285,13 +296,13 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
             {myMain && !attackers.length && !targeting && (
               <>
                 {ready.size > 0 && <span className="hint">Tap your glowing units to attack</span>}
-                <button className="btn sig" disabled={P.signatureUsed || P.momentum < civ.signature.cost} onClick={() => setConfirmSig(true)}>
+                <button className={`btn sig ${glowBtn('signature')}`} disabled={P.signatureUsed || P.momentum < civ.signature.cost} onClick={() => setConfirmSig(true)}>
                   <Icon name="momentum" size={15} /> {civ.signature.name} <small>{civ.signature.cost}</small>
                 </button>
                 <button className="btn ghost" disabled={P.momentum < RULES.rallyCost} onClick={() => send({ type: 'rally' })} title="Spend 2 Momentum to draw a card">
                   Rally <small>{RULES.rallyCost}</small>
                 </button>
-                <button className="btn primary" onClick={() => send({ type: 'endTurn' })}>End turn</button>
+                <button className={`btn primary ${glowBtn('endTurn')}`} onClick={() => send({ type: 'endTurn' })}>End turn</button>
               </>
             )}
             {!myMain && !responding && view.phase !== 'over' && <span className="hint dots">Waiting</span>}
@@ -311,7 +322,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
           const card = getCard(c.cardId);
           const playable = myMain ? canPlayCard(view, me, c.uid) === null : responding ? reactable.has(c.uid) : false;
           return (
-            <div key={c.uid} className="hand-slot" style={{ '--i': i, '--n': P.hand.length } as CSSProperties}>
+            <div key={c.uid} className={`hand-slot ${glowHand(c.cardId) ? 'coach-glow' : ''}`} style={{ '--i': i, '--n': P.hand.length } as CSSProperties}>
               <CardFace cardId={c.cardId} civ={P.civ} cost={costOf(P, card)} disabled={!playable}
                 selected={selected === c.uid || reaction === c.uid || targeting === c.uid} onClick={() => tapHand(c.uid)} />
             </div>
@@ -321,32 +332,29 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
 
       {/* --------------------------------------------------- overlays */}
       {responding && pending && (
-        <ResponsePanel view={view} me={me} blockers={blockers} reaction={reaction} onRespond={respond}
+        <ResponsePanel glow={glowBtn('respond')} view={view} me={me} blockers={blockers} reaction={reaction} onRespond={respond}
           onClearReaction={() => setReaction(null)} />
       )}
 
       {selCard && (
-        <Sheet onClose={() => setSelected(null)}>
-          <CardFace cardId={selCard.cardId} civ={P.civ} size="full" cost={costOf(P, getCard(selCard.cardId))} />
-          <div className="sheet-actions">
-            {myMain && (() => {
-              const why = canPlayCard(view, me, selCard.uid);
-              return why ? <p className="why">{why}</p> : <button className="btn primary big" onClick={playSelected}>
-                {getCard(selCard.cardId).target && getCard(selCard.cardId).target !== 'none' ? 'Choose target' : 'Play'}</button>;
-            })()}
-            {!myMain && getCard(selCard.cardId).kind === 'reaction' && <p className="why">Reactions are played when your opponent attacks or schemes against you.</p>}
-            <button className="btn ghost" onClick={() => setSelected(null)}>Close</button>
-          </div>
+        <Sheet onClose={() => setSelected(null)} wide>
+          <Inspector cardId={selCard.cardId} civ={P.civ} cost={costOf(P, getCard(selCard.cardId))}
+            note={myMain ? canPlayCard(view, me, selCard.uid) : getCard(selCard.cardId).kind === 'reaction' ? 'Reactions are played when your rival attacks or schemes against you.' : null}>
+            {myMain && canPlayCard(view, me, selCard.uid) === null && (
+              <button className="btn primary big" onClick={playSelected}>
+                {getCard(selCard.cardId).target && getCard(selCard.cardId).target !== 'none' ? 'Choose target' : 'Play'}
+              </button>
+            )}
+            <button className="btn ghost big" onClick={() => setSelected(null)}>Close</button>
+          </Inspector>
         </Sheet>
       )}
 
       {inspect && (
-        <Sheet onClose={() => setInspect(null)}>
-          <CardFace cardId={inspect.cardId} civ={view.players[inspect.owner].civ} size="full" />
-          <div className="sheet-actions">
-            {inspect.note && <p className="why">{inspect.note}</p>}
-            <button className="btn ghost" onClick={() => setInspect(null)}>Close</button>
-          </div>
+        <Sheet onClose={() => setInspect(null)} wide>
+          <Inspector cardId={inspect.cardId} civ={view.players[inspect.owner].civ} note={inspect.note}>
+            <button className="btn ghost big" onClick={() => setInspect(null)}>Close</button>
+          </Inspector>
         </Sheet>
       )}
 
@@ -359,7 +367,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
             <p className="muted">Costs {civ.signature.cost} Momentum · once per turn</p>
           </div>
           <div className="sheet-actions">
-            <button className="btn primary big" onClick={() => { send({ type: 'signature' }); setConfirmSig(false); }}>Invoke</button>
+            <button className={`btn primary big ${glowBtn('signature')}`} onClick={() => { send({ type: 'signature' }); setConfirmSig(false); }}>Invoke</button>
             <button className="btn ghost" onClick={() => setConfirmSig(false)}>Not yet</button>
           </div>
         </Sheet>
@@ -376,6 +384,20 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       )}
 
       {showHelp && <HowToPlay onClose={() => { setShowHelp(false); try { localStorage.setItem('pm.seenHelp', '1'); } catch { /* ignore */ } }} />}
+
+      {coach && match instanceof TutorialMatch && (
+        <aside className={`coach mode-${coach.mode}`} aria-live="polite">
+          <div className="coach-head"><span>Academy · {coach.lesson.title}</span><b>{Math.min(coach.index + 1, coach.total)}/{coach.total}</b></div>
+          <div className="coach-bar"><i style={{ width: `${(100 * (coach.index + 1)) / coach.total}%` }} /></div>
+          <p>{coach.step.text}</p>
+          <div className="coach-actions">
+            {coach.mode === 'info' && <button className="btn primary" onClick={() => { play('tap'); match.next(); }}>Next</button>}
+            {coach.mode === 'do' && <button className="btn ghost small" onClick={() => { play('tap'); setSelected(null); setTargeting(null); setAttackers([]); match.solve(); }}>Show me</button>}
+            {coach.mode === 'wait' && <span className="hint dots">Your rival is moving</span>}
+            {coach.mode === 'done' && <button className="btn primary" onClick={onExit}>Back to the Academy</button>}
+          </div>
+        </aside>
+      )}
 
       {banner && <div key={banner.key} className={`banner tone-${banner.tone}`}><div className="banner-text">{banner.text}</div>{banner.sub && <div className="banner-sub">{banner.sub}</div>}</div>}
       {toast && <div className="toast" role="alert">{toast}</div>}
@@ -442,8 +464,8 @@ function PlayerBar({ p, view, isMe, active, extra, shake, floaters }: { p: Playe
   );
 }
 
-function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters }: {
-  b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
+function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters, glow }: {
+  glow?: boolean; b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
 }) {
   const card = getCard(b.cardId);
   const pal = paletteFor(card, p.civ);
@@ -451,7 +473,7 @@ function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floate
   const hp = maxI - b.damage;
   const state = b.unrest > 0 ? 'unrest' : working ? 'working' : 'unsupported';
   return (
-    <button className={`bld state-${state} ${fx ?? ''} ${targetable ? 'targetable' : ''} ${threatened ? 'threatened' : ''} rarity-${card.rarity ?? 'common'}`}
+    <button className={`bld state-${state} ${glow ? 'coach-glow' : ''} ${fx ?? ''} ${targetable ? 'targetable' : ''} ${threatened ? 'threatened' : ''} rarity-${card.rarity ?? 'common'}`}
       style={{ '--c-primary': pal.primary, '--c-secondary': pal.secondary, '--c-accent': pal.accent } as CSSProperties}
       onClick={onTap} aria-label={`${card.name}, integrity ${hp} of ${maxI}, ${state}`}>
       <div className="bld-plinth" />
@@ -483,14 +505,14 @@ function GhostTile({ cardId }: { cardId: string }) {
   );
 }
 
-function UnitToken({ u, p, fx, canAttack, canBlock, selected, attacking, onTap }: {
-  u: UnitInst; p: PlayerState; fx?: string; canAttack: boolean; canBlock: boolean; selected: boolean; attacking: boolean; onTap: () => void;
+function UnitToken({ u, p, fx, canAttack, canBlock, selected, attacking, onTap, glow }: {
+  glow?: boolean; u: UnitInst; p: PlayerState; fx?: string; canAttack: boolean; canBlock: boolean; selected: boolean; attacking: boolean; onTap: () => void;
 }) {
   const card = getCard(u.cardId);
   const pal = paletteFor(card, p.civ);
   const hp = unitMaxHp(p, u) - u.damage;
   return (
-    <button className={`unit ${fx ?? ''} ${canAttack ? 'can-attack' : ''} ${canBlock ? 'can-block' : ''} ${selected ? 'is-selected' : ''} ${u.attacked ? 'exhausted' : ''} ${attacking ? 'attacking' : ''}`}
+    <button className={`unit ${glow ? 'coach-glow' : ''} ${fx ?? ''} ${canAttack ? 'can-attack' : ''} ${canBlock ? 'can-block' : ''} ${selected ? 'is-selected' : ''} ${u.attacked ? 'exhausted' : ''} ${attacking ? 'attacking' : ''}`}
       style={{ '--c-primary': pal.primary, '--c-secondary': pal.secondary } as CSSProperties}
       onClick={onTap} aria-label={`${card.name}, strength ${unitStr(p, u)}, health ${hp}`}>
       <div className="unit-art"><CardArt motif={card.art} palette={pal} /></div>
@@ -503,8 +525,8 @@ function UnitToken({ u, p, fx, canAttack, canBlock, selected, attacking, onTap }
   );
 }
 
-function ResponsePanel({ view, me, blockers, reaction, onRespond, onClearReaction }: {
-  view: GameState; me: PlayerId; blockers: string[]; reaction: string | null; onRespond: () => void; onClearReaction: () => void;
+function ResponsePanel({ view, me, blockers, reaction, onRespond, onClearReaction, glow }: {
+  glow?: string; view: GameState; me: PlayerId; blockers: string[]; reaction: string | null; onRespond: () => void; onClearReaction: () => void;
 }) {
   const pending = view.pending!;
   const O = view.players[other(me)];
@@ -531,7 +553,7 @@ function ResponsePanel({ view, me, blockers, reaction, onRespond, onClearReactio
       <div className="rp-actions">
         {reaction && <span className="rp-chip">{getCard(P.hand.find((c) => c.uid === reaction)!.cardId).name}<button onClick={onClearReaction} aria-label="Remove reaction"><Icon name="close" size={12} /></button></span>}
         {blockers.length > 0 && <span className="rp-chip">{blockers.length} blocker{blockers.length > 1 ? 's' : ''}</span>}
-        <button className={`btn big ${doing ? 'primary' : 'ghost'}`} onClick={onRespond}>{doing ? 'Respond' : pending.kind === 'attack' ? 'Take the hit' : 'Let it happen'}</button>
+        <button className={`btn big ${doing ? 'primary' : 'ghost'} ${glow ?? ''}`} onClick={onRespond}>{doing ? 'Respond' : pending.kind === 'attack' ? 'Take the hit' : 'Let it happen'}</button>
       </div>
     </div>
   );

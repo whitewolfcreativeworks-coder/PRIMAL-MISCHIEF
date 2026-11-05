@@ -2,6 +2,8 @@ import { cardPoolFor, CIVS, getCard, getCiv, maxCopies, RULES, validateDeck, typ
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { CivEmblem } from '../art/motifs';
 import { CardFace } from './Card';
+import { Inspector } from './Inspector';
+import type { Lesson } from '../game/tutorial';
 import { Icon } from './icons';
 
 /** Build flag for the single-file offline edition (no game server, vs-computer only). */
@@ -22,8 +24,8 @@ export function saveDeck(civ: CivId, deck: string[] | null) {
 
 // ---------------------------------------------------------------- title
 
-export function Title({ onLocal, onOnline, onHelp, resumable, onResume, name, setName }: {
-  onLocal: () => void; onOnline: () => void; onHelp: () => void; resumable: boolean; onResume: () => void; name: string; setName: (n: string) => void;
+export function Title({ onLocal, onOnline, onHelp, onAcademy, resumable, onResume, name, setName }: {
+  onAcademy: () => void; onLocal: () => void; onOnline: () => void; onHelp: () => void; resumable: boolean; onResume: () => void; name: string; setName: (n: string) => void;
 }) {
   return (
     <div className="title-screen">
@@ -39,6 +41,7 @@ export function Title({ onLocal, onOnline, onHelp, resumable, onResume, name, se
       <div className="title-actions">
         {!OFFLINE && resumable && <button className="btn primary big" onClick={onResume}>Resume online match</button>}
         <button className="btn primary big" onClick={onLocal}>Play the computer</button>
+        <button className="btn big" onClick={onAcademy}>Academy — learn each civilization</button>
         {!OFFLINE && <button className="btn big" onClick={onOnline}>Challenge a friend online</button>}
         <button className="btn ghost" onClick={onHelp}><Icon name="info" /> How to play</button>
       </div>
@@ -155,9 +158,12 @@ export function DeckBuilder({ civ, onDone }: { civ: CivId; onDone: () => void })
       </div>
       {peek && (
         <div className="sheet-backdrop" onClick={() => setPeek(null)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()}>
-            <CardFace cardId={peek} civ={civ} size="full" />
-            <div className="sheet-actions"><button className="btn ghost" onClick={() => setPeek(null)}>Close</button></div>
+          <div className="sheet wide" onClick={(e) => e.stopPropagation()}>
+            <Inspector cardId={peek} civ={civ}>
+              <button className="btn" onClick={() => remove(peek)} disabled={!count(peek)}>Remove one</button>
+              <button className="btn primary" onClick={() => add(peek)} disabled={count(peek) >= maxCopies(getCard(peek)) || deck.length >= RULES.deckSize}>Add to deck</button>
+              <button className="btn ghost" onClick={() => setPeek(null)}>Close</button>
+            </Inspector>
           </div>
         </div>
       )}
@@ -212,4 +218,43 @@ export function WaitingRoom({ code, onCancel }: { code: string; onCancel: () => 
       <button className="btn ghost" onClick={onCancel}>Cancel</button>
     </div>
   );
+}
+
+// ---------------------------------------------------------------- academy
+
+export function Academy({ lessons, onStart, onBack }: { lessons: Lesson[]; onStart: (l: Lesson) => void; onBack: () => void }) {
+  const done = (() => { try { return new Set<string>(JSON.parse(localStorage.getItem('pm.lessonsDone') ?? '[]')); } catch { return new Set<string>(); } })();
+  return (
+    <div className="screen academy-screen">
+      <header className="screen-head">
+        <button className="btn ghost" onClick={onBack}>← Back</button>
+        <h2>Academy</h2>
+        <span />
+      </header>
+      <p className="academy-intro">Each lesson sets up a small battle and walks you through one civilization’s unique cards, its signature ability and a winning trick. Takes about three minutes.</p>
+      <div className="civ-grid">
+        {CIVS.map((c) => {
+          const l = lessons.find((x) => x.civ === c.id);
+          return (
+            <button key={c.id} className="civ-panel lesson-panel" disabled={!l} onClick={() => l && onStart(l)}
+              style={{ '--c-primary': c.palette.primary, '--c-secondary': c.palette.secondary, '--c-accent': c.palette.accent, '--c-ink': c.palette.ink } as CSSProperties}>
+              <div className="civ-top">
+                <CivEmblem civ={c.id} palette={c.palette} size={64} />
+                <div>
+                  <div className="civ-name">{c.name}</div>
+                  <div className="civ-epithet">{l ? l.title : 'Coming soon'}</div>
+                </div>
+              </div>
+              <p className="civ-summary">{l?.summary ?? c.summary}</p>
+              <span className="lesson-cta">{done.has(c.id) ? '✓ Completed · replay' : 'Start lesson →'}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function markLessonDone(civ: string) {
+  try { const s = new Set<string>(JSON.parse(localStorage.getItem('pm.lessonsDone') ?? '[]')); s.add(civ); localStorage.setItem('pm.lessonsDone', JSON.stringify([...s])); } catch { /* ignore */ }
 }
