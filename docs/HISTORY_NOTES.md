@@ -135,3 +135,29 @@ abstractions over long, overlapping histories, not a strict chronology:
 
 The riverbank skylines are procedural, impressionistic illustrations of each
 civilization’s architectural vocabulary at each Age, not reconstructions.
+
+## Hologram people and architecture (v0.4)
+
+The hologram figures and buildings are simplified interpretations, not
+reconstructions. These choices are deliberate:
+
+- **Inca** troops never ride. There were no horses or elephants in the
+  Andes before 1532; Inca armies march, use slings and star-headed maces,
+  and move supplies on llamas along the Qhapaq Ñan with chasqui runners.
+- **Sumer**'s battle wagons follow the four-wheeled, onager-drawn vehicles
+  on the Standard of Ur (c. 2600 BCE); its soldiers wear fleece-tiered
+  kilts and carry tall shields, as on the Stele of the Vultures. Sumer has
+  no stone quarry: its "quarry" is a brick yard.
+- **Carthage**'s war elephants are shown with a small platform. Whether
+  Carthage's smaller North African elephants carried towers is debated, and
+  the model hedges with a low platform. Its cavalry is Numidian: light
+  horse with javelins and small shields, riding without armour.
+- **Kush** soldiers are archers first (Ta-Seti, "Land of the Bow"). Temples
+  follow the pylon–court–sanctuary pattern, and Meroë's pyramids are
+  steep and narrow, unlike Egypt's. The Lion Temple shows architecture
+  only, with a simple lion on a plinth and no deity imagery.
+- **Aksum**'s stelae have false doors and storeys, after the stelae
+  field. Trade arrives by Red Sea ships and camel caravans.
+- Figures are deliberately plain, with no faces or skin tones. Every culture
+  is drawn in the same hologram style and colour by side, so no people is
+  marked out.

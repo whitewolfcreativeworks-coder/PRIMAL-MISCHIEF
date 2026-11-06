@@ -129,3 +129,23 @@ important manual check remaining.
 7. Commission or develop painted art to replace the procedural motifs on
    rare and wonder cards.
 8. Accounts and saved decks, then public matchmaking.
+
+## v0.4: hologram movie (holograms act out exactly what happened)
+
+- **Built.**
+  - Articulated hologram people with about 30 procedural actions, and outfits per civilization and role.
+  - Vehicles and animals.
+  - A separate architecture kit for each civilization (Kush, Aksum, Carthage, Sumer, Inca).
+  - A casting director that derives each troop from the card's own data.
+  - Scenes for every kind of event, each staged from the engine's events.
+  - Gentle bloom.
+  - A Hologram Theater screen that plays any scene.
+- **Engine.** `combat` events now record, per unit, whether it survived and what killed it (tower, ambush, retreat or melee). The holograms drop exactly those units. Rules are unchanged.
+- **Tested.**
+  - Engine: 28 tests.
+  - Client: 18 tests. Every gallery scene plays headlessly for every civilization, every unit is cast, and every building has architecture.
+  - Server: 7 tests.
+  - A real-time match in headless Chrome at iPad landscape: no page errors, scenes played in turn order.
+  - Stills checked in landscape and portrait.
+- **Not yet verified.**
+  - Frame rate on a real iPad. Cities at Age V are dense, about 150 meshes. If needed, the bloom can be turned down (`Theater.setBloom`) or dense city details trimmed.

@@ -131,26 +131,64 @@ hidden information.
 - **A new mechanic:** add an `Effect` op or `Passive` in `types.ts` and
   handle it in `engine.ts`. Keep effects finite and non-recursive.
 
-## Hologram theater
+## Hologram theater (v0.4: a running holographic movie)
 
-- `holo/material.ts` — additive hologram shader: fresnel rim, drifting
-  scanlines, flicker, bottom-up materialize sweep, glitch and heat tint.
-- `holo/models.ts` — procedural miniatures (infantry, archers, slingers,
-  cavalry, rams, battle wagons, ships; pyramids, ziggurat, stele, temples,
-  walls, terraces, harbors…). Built from primitives so they can shatter.
-- `holo/theater.ts` — renderer, projector disc and light cone, particles,
-  floating labels, a scene queue (max 3 pending, so it keeps up).
-- `holo/vignettes.ts` — scenes staged across a hologram river (you attack
-  away from the viewer, the rival attacks toward you): every Civilization card
-  shows your city at its Age with the new work rising; a new Age shows the old
-  settlement giving way to the next; deployments march to the riverbank;
-  battles staged differently for
-  each reaction (Ambush, Shield Wall, Feigned Retreat, Turn the Tide),
-  schemes including the Mirror reversal, construction, collapse,
-  signatures, victory, and per-card looping previews for the close-up.
-- In vs-computer matches the AI waits for a scene to finish. Online, scenes
-  queue and drop the oldest if they fall behind. Animation "Off" disables
-  holograms; "Fast" plays them at 1.8× and skips minor ones.
+Every card that is played is acted out over the river by small hologram
+people of the right culture. The rule that keeps it honest: **scenes are
+built only from engine events**, so whatever the rules decide is what
+the hologram shows. When cards or rules change, the scenes follow.
+
+- **Events carry the facts.** `combat` events list every attacking and
+  blocking card in order, with `attackerFates` (survived, or fell to
+  `tower`, `ambush`, `retreat` or `melee`) and `blockerFates`. Schemes and
+  signatures are paired with the `unitDestroyed` events that follow them,
+  so a volley drops exactly the units the engine removed.
+- `holo/figures.ts`: articulated people (hips, spine, neck, shoulders,
+  elbows, knees, hands), each with a procedural pose library: walk, march,
+  run, wade, sneak, charge, thrust, swing, shoot, sling, throw, block,
+  push, pull, row, carry, hammer, dig, harvest, cheer, dance, bow, command,
+  ride, cower, stagger and fall. `OUTFITS` dresses each civilization and
+  role: Kushite bowmen, Sumerian fleece kilts with tall shields, Inca
+  unku tunics with mace and sling, Carthaginian crests, Aksumite round
+  shields.
+- `holo/vehicles.ts`: horses, elephants (riders, swinging trunk),
+  Sumerian onager battle wagons, a roofed siege ram whose crew push it,
+  galleys and traders with rowing oars, donkey, camel and llama pack
+  trains, and a stone sledge.
+- `holo/arch.ts`: a separate architecture kit per culture. Kushite pylons,
+  steep pyramids and deffufa; Aksumite stelae and "monkey-head" walls;
+  Punic podium temples and the cothon; Sumerian niched mudbrick and
+  ziggurats; Inca polygonal masonry, terraces and qullqa. It provides
+  `archBuilding(card, civ)` and `archCity(civ, age)`.
+- `holo/director.ts`: **casting and timelines.** `castFor(card, civ)`
+  derives who appears from the card's own data (keywords, strength, art)
+  with a small override table. For example, ranged troops become archers,
+  or slingers for the Inca, and siege becomes a ram with crew. No horses or
+  elephants are cast for the Inca. An `Actor` plays a timeline of beats
+  (`do(at, act, {to, dur, face})`), and a `Troupe` holds a scene's actors
+  and missiles (arrows, sling stones, javelins, torches).
+- `holo/vignettes.ts`: the scenes.
+  - The battle covers every branch: towers, ambush, shield wall,
+    feigned retreat, turn the tide, treaty, breaching walls and raids.
+  - Schemes are staged by what the card does (fire, sabotage, theft,
+    volleys, sack, blockade, landing), each with its hit, foiled and
+    mirrored versions.
+  - Construction crews are chosen from building tags: farmers, masons
+    with a stone sledge, merchants with pack animals, ships at harbours.
+  - Also: deployments, tactics, a new Age, each civilization's signature,
+    collapse and victory.
+- `holo/theater.ts`: renderer, camera framing (`stage.frame`) and bloom
+  (three's `UnrealBloomPass`, composited with `mix-blend-mode: screen`).
+- `holo/gallery.ts` and the **Hologram Theater** screen (from the title
+  screen, or `?theater=kush`) play every scene for any civilization.
+  `apps/client/test/holograms.test.ts` runs every scene for every
+  civilization headlessly. It checks that every unit is cast and every
+  building has architecture.
+
+**Adding a card:** nothing extra is needed for it to appear. Units are
+cast from their keywords, buildings get a crew from their tags, and
+hostile tactics get a scene from their effects. Bespoke looks go in
+`CAST_OVERRIDES` (director) or `arch.ts`.
 
 ## Academy
 

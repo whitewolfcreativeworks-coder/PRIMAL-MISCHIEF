@@ -9,7 +9,7 @@
     "dev": "npm run dev -w @pm/client",
     "dev:server": "npm run dev -w @pm/server",
     "build": "npm run build -w @pm/client && npm run build -w @pm/server",
-    "test": "npm test -w @pm/engine && npm test -w @pm/server",
+    "test": "npm test -w @pm/engine && npm test -w @pm/client && npm test -w @pm/server",
     "typecheck": "tsc -p packages/engine && tsc -p apps/client --noEmit && tsc -p apps/server --noEmit",
     "simulate": "npm run simulate -w @pm/engine",
     "start": "node apps/server/dist/server.js"

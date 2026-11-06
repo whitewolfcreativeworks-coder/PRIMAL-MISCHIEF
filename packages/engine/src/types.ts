@@ -208,6 +208,9 @@ export type Action =
   | { type: 'endTurn' }
   | { type: 'concede' };
 
+/** How an attacking unit fell: tower arrows, an ambush, a feigned retreat, or the melee itself. */
+export type UnitFate = 'tower' | 'ambush' | 'retreat' | 'melee';
+
 /** Presentation events emitted by the engine so clients can animate what happened. */
 export type GameEvent =
   | { type: 'turnStart'; player: PlayerId; turn: number }
@@ -230,6 +233,10 @@ export type GameEvent =
   | {
       type: 'combat'; attacker: PlayerId; power: number; blocked: number; wallAbsorbed: number; dealt: number;
       attackerCards: string[]; blockerCards: string[]; attackersLost: number; blockersLost: number;
+      /** Per attacker (same order as attackerCards): null = survived, else what killed it. */
+      attackerFates: (UnitFate | null)[];
+      /** Per blocker (same order as blockerCards): true = fell. */
+      blockerFates: boolean[];
       target: string; wallCard: string | null; reaction: ReactionKind | null; cancelled: boolean; tideBack: number;
       targetDestroyed: boolean; towerHits: number; progressRaided: number;
     }

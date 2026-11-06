@@ -14,3 +14,6 @@
 - Target: iPad Safari, touch only. No hover-only or keyboard-only
   interactions; keep tap targets ≥ 40px.
 - Every animation duration must scale with the CSS `--pace` variable.
+- Holograms are built only from engine events (see the Hologram theater
+  section of `docs/ARCHITECTURE.md`). If a rule changes what happens, put
+  the facts in the event and stage them; never guess outcomes in the client.

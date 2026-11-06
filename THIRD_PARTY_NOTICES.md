@@ -10,7 +10,7 @@ synthesized sounds are original to this project.
 | react, react-dom, scheduler | MIT | Client UI |
 | @fontsource/marcellus (Marcellus by Astigmatic) | SIL OFL 1.1 | Display typeface, self-hosted |
 | @fontsource-variable/inter (Inter by Rasmus Andersson) | SIL OFL 1.1 | UI typeface, self-hosted |
-| three (three.js) 0.186.1 | MIT | Hologram battle theater (WebGL) |
+| three (three.js) 0.186.1 | MIT | Hologram battle theater (WebGL), including its bundled post-processing add-ons (EffectComposer, UnrealBloomPass, OutputPass) from `three/examples/jsm`, same licence |
 | ws | MIT | Server WebSockets |
 
 OFL fonts may be bundled and used commercially; they may not be sold on

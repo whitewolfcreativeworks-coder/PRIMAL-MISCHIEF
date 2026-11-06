@@ -4,10 +4,11 @@ import { defaultServerUrl, LocalMatch, OnlineMatch, savedRoom, TutorialMatch, ty
 import { LESSONS } from './game/lessons';
 import type { Lesson } from './game/tutorial';
 import { Board } from './ui/Board';
+import { Gallery } from './ui/Gallery';
 import { HowToPlay } from './ui/HowToPlay';
 import { Academy, Codex, LocalSetup, Lobby, markLessonDone, Title, WaitingRoom } from './ui/Menu';
 
-type Screen = 'title' | 'local' | 'online' | 'deck' | 'match' | 'academy';
+type Screen = 'title' | 'local' | 'online' | 'deck' | 'match' | 'academy' | 'gallery';
 
 const stored = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 const store = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
@@ -15,7 +16,7 @@ const store = (k: string, v: string) => { try { localStorage.setItem(k, v); } ca
 export function App() {
   const params = new URLSearchParams(location.search);
   const inviteCode = params.get('room')?.toUpperCase() ?? undefined;
-  const [screen, setScreen] = useState<Screen>(inviteCode ? 'online' : 'title');
+  const [screen, setScreen] = useState<Screen>(inviteCode ? 'online' : params.has('theater') ? 'gallery' : 'title');
   const [back, setBack] = useState<Screen>('title');
   const [civ, setCiv] = useState<CivId | null>(() => (stored('pm.civ', '') as CivId) || null);
   const [deckCiv, setDeckCiv] = useState<CivId>('kush');
@@ -106,12 +107,14 @@ export function App() {
       onCreate={() => startOnline('create')} onJoin={(code) => startOnline('join', code)} serverUrl={serverUrl} setServerUrl={setServerUrl} />;
   } else if (screen === 'academy') {
     body = <Academy lessons={LESSONS} onStart={startLesson} onBack={() => setScreen('title')} />;
+  } else if (screen === 'gallery') {
+    body = <Gallery onBack={() => setScreen('title')} initialCiv={(params.get('theater') as CivId) || civ || undefined} />;
   } else if (screen === 'deck') {
     body = <Codex civ={deckCiv} onDone={() => setScreen(back)} />;
   } else {
     body = (
       <>
-        <Title onAcademy={() => setScreen('academy')} onLocal={() => setScreen('local')} onOnline={() => setScreen('online')} onHelp={() => setHelp(true)}
+        <Title onTheater={() => setScreen('gallery')} onAcademy={() => setScreen('academy')} onLocal={() => setScreen('local')} onOnline={() => setScreen('online')} onHelp={() => setHelp(true)}
           resumable={!!savedRoom()} onResume={resume} name={name} setName={setName} />
         <div className="pace-ctl">
           <span>Animations</span>

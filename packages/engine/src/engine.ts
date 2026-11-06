@@ -1,6 +1,7 @@
 import { ageName, getCard, getCiv, progressNeeded, RULES } from './data';
 import { shuffleInPlace } from './rng';
 import type {
+  UnitFate,
   Action, Age, ApplyResult, AttackTarget, BuildingInst, CardDef, CardInst, CivId, Effect, Family, GameEvent,
   GameState, Passive, PendingAction, PendingAttack, PlayerId, PlayerState, ReactionKind, Resource, UnitInst,
 } from './types';
@@ -447,8 +448,14 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   const targetUid = pend.target.kind === 'building' ? pend.target.uid : null;
   const tgtCard = targetUid ? def.buildings.find((b) => b.uid === targetUid)?.cardId ?? 'city' : 'city';
   let towerHits = 0, progressRaided = 0;
+  // Exactly who fell, and to what, so the hologram can stage each death.
+  const attackerUids = attackers.map((u) => u.uid);
+  const fates: Record<string, UnitFate> = {};
+  const markFallen = (why: UnitFate) => { for (const uid of attackerUids) if (!fates[uid] && !atk.units.some((u) => u.uid === uid)) fates[uid] = why; };
   const detail = (extra: { wallCard?: string | null; cancelled?: boolean; tideBack?: number }) => ({
     attackerCards, blockerCards,
+    attackerFates: (markFallen('melee'), attackerUids.map((uid) => fates[uid] ?? null)),
+    blockerFates: blockers.map((b) => !def.units.some((u) => u.uid === b.uid)),
     attackersLost: attackerCards.length - atk.units.filter((u) => pend.unitUids.includes(u.uid)).length,
     blockersLost: blockerCards.length - def.units.filter((u) => blockerUids.includes(u.uid)).length,
     target: tgtCard, wallCard: extra.wallCard ?? null, reaction, cancelled: extra.cancelled ?? false, tideBack: extra.tideBack ?? 0,
@@ -456,7 +463,7 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   });
 
   if (reaction === 'feignedRetreat' || reaction === 'treaty') {
-    if (reaction === 'feignedRetreat') for (const u of attackers) damageUnit(st, atk.id, u, 1, events);
+    if (reaction === 'feignedRetreat') { for (const u of attackers) damageUnit(st, atk.id, u, 1, events); markFallen('retreat'); }
     else changeRes(st, atk.id, 'prosperity', 3, events);
     log(st, def.id, reaction === 'treaty' ? `${def.name} offers a treaty — the attack is called off.` : `${def.name} feigns a retreat — the attack strikes empty ground.`);
     events.push({ type: 'combat', attacker: atk.id, power: 0, blocked: 0, wallAbsorbed: 0, dealt: 0, ...detail({ cancelled: true }) });
@@ -466,8 +473,8 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   // Towers loose arrows as the attackers cross the river.
   const w = workingBuildings(def);
   const towers = def.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes('tower')).length;
-  if (towers) { towerHits = towers; for (const u of [...attackers]) damageUnit(st, atk.id, u, towers, events); }
-  if (reaction === 'ambush') for (const u of [...attackers]) damageUnit(st, atk.id, u, 2, events);
+  if (towers) { towerHits = towers; for (const u of [...attackers]) damageUnit(st, atk.id, u, towers, events); markFallen('tower'); }
+  if (reaction === 'ambush') { for (const u of [...attackers]) damageUnit(st, atk.id, u, 2, events); markFallen('ambush'); }
   attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
 
   const targetBuilding = targetUid ? def.buildings.find((b) => b.uid === targetUid) : undefined;

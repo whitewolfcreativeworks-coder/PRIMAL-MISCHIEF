@@ -199,6 +199,21 @@ describe('combat across the river', () => {
     expect(r.state.players[1].progress).toBe(4);
     expect(r.events.find((e) => e.type === 'combat')).toMatchObject({ progressRaided: 2 });
   });
+  it('the combat event names exactly who fell, and to what', () => {
+    const st = ready(fresh());
+    build(st, 1, 'watchtower');
+    const a1 = unit(st, 0, 'militia'), a2 = unit(st, 0, 'eliteGuard');
+    const d = unit(st, 1, 'militia');
+    st.players[1].prosperity = 5;
+    const amb = give(st, 1, 'ambush');
+    const r = attackAndResolve(st, [a1, a2], { kind: 'city' }, { reactionUid: amb, blockerUids: [d] });
+    const c = r.events.find((e) => e.type === 'combat');
+    expect(c && c.type === 'combat' && c.attackerFates[0]).toBe('ambush'); // militia (hp 2): the tower's arrow wounds it, the ambush finishes it
+    if (!c || c.type !== 'combat') throw new Error('no combat');
+    expect(c.attackerFates.length).toBe(2);
+    expect(c.attackerFates.filter(Boolean).length).toBe(c.attackersLost);
+    expect(c.blockerFates.filter(Boolean).length).toBe(c.blockersLost);
+  });
   it('exhausted attackers cannot block on the next turn', () => {
     let st = ready(fresh());
     const a = unit(st, 0, 'spearmen');

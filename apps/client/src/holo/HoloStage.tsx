@@ -10,30 +10,48 @@ import { ageUpScene, battleScene, collapseScene, deployScene, growScene, preview
 export function scenesFor(events: GameEvent[], view: GameState, me: PlayerId, pace: number): Vignette[] {
   const out: Vignette[] = [];
   const full = pace >= 1;
+  const P = view.players;
+  const other = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
   const covered = new Set<number>(); // buildingDestroyed events already shown inside a battle or scheme
   events.forEach((e) => {
     if (e.type === 'combat') events.forEach((x, j) => { if (x.type === 'buildingDestroyed' && x.player !== e.attacker) covered.add(j); });
   });
+  /** Units of `pid` destroyed by the event at index i (up to the next battle or scheme). */
+  const lostAfter = (i: number, pid: PlayerId) => {
+    const lost: string[] = [];
+    for (const x of events.slice(i + 1)) {
+      if (x.type === 'combat' || x.type === 'scheme' || x.type === 'signature') break;
+      if (x.type === 'unitDestroyed' && x.player === pid) lost.push(x.cardId);
+    }
+    return lost;
+  };
   const deployed: Record<PlayerId, string[]> = { 0: [], 1: [] };
   const flushDeploy = () => {
-    for (const p of [0, 1] as PlayerId[]) if (deployed[p].length) { if (full) out.push(deployScene(deployed[p], p === me)); deployed[p] = []; }
+    for (const p of [0, 1] as PlayerId[]) if (deployed[p].length) { if (full) out.push(deployScene(deployed[p], p === me, P[p].civ)); deployed[p] = []; }
   };
   events.forEach((e, i) => {
     if (e.type !== 'unitDeployed' && !(e.type === 'buildingRaised' && getCard(e.cardId).kind === 'fort')) flushDeploy();
     switch (e.type) {
-      case 'combat': out.push(battleScene(e, e.attacker === me)); break;
+      case 'combat': {
+        const d = other(e.attacker);
+        out.push(battleScene(e, e.attacker === me, { aCiv: P[e.attacker].civ, dCiv: P[d].civ, aAge: P[e.attacker].age, dAge: P[d].age }));
+        break;
+      }
       case 'scheme': {
         const later = events.slice(i + 1);
-        const defender: PlayerId = e.caster === 0 ? 1 : 0;
-        const tIdx = later.findIndex((x) => x.type === 'buildingDestroyed' && x.player === defender && x.cardId === e.targetCardId);
+        const victim = other(e.caster);
+        const tIdx = later.findIndex((x) => x.type === 'buildingDestroyed' && x.player === victim && x.cardId === e.targetCardId);
         const mIdx = later.findIndex((x) => x.type === 'buildingDestroyed' && x.player === e.caster && x.cardId === e.mirrorTargetCardId);
         if (tIdx >= 0) covered.add(i + 1 + tIdx);
         if (mIdx >= 0) covered.add(i + 1 + mIdx);
-        out.push(schemeScene(e, e.caster === me, { target: tIdx >= 0, mirror: mIdx >= 0 }));
+        out.push(schemeScene(e, e.caster === me, {
+          casterCiv: P[e.caster].civ, victimCiv: P[victim].civ, casterAge: P[e.caster].age, victimAge: P[victim].age,
+          victimUnits: P[victim].units.map((u) => u.cardId), victimUnitsLost: lostAfter(i, victim), destroyed: { target: tIdx >= 0, mirror: mIdx >= 0 },
+        }));
         break;
       }
       case 'grow': {
-        const p = view.players[e.player];
+        const p = P[e.player];
         const wonder = getCard(e.cardId).rarity === 'wonder';
         // Show the city at the Age it was when the card was played (an Age-up scene follows if it advanced).
         const ageAfter = events.slice(i + 1).find((x) => x.type === 'ageUp' && x.player === e.player);
@@ -41,13 +59,17 @@ export function scenesFor(events: GameEvent[], view: GameState, me: PlayerId, pa
         if (full || wonder) out.push(growScene(e.cardId, p.civ, age, e.player === me, e.progress));
         break;
       }
-      case 'ageUp': out.push(ageUpScene(view.players[e.player].civ, e.age, e.name, e.player === me)); break;
+      case 'ageUp': out.push(ageUpScene(P[e.player].civ, e.age, e.name, e.player === me)); break;
       case 'unitDeployed': deployed[e.player].push(e.cardId); break;
       case 'buildingRaised': if (getCard(e.cardId).kind === 'fort') deployed[e.player].push(e.cardId); break;
-      case 'tactic': if (full) out.push(tacticScene(e.cardId, e.player === me)); break;
-      case 'buildingDestroyed': if (!covered.has(i)) out.push(collapseScene(e.cardId, e.player === me)); break;
-      case 'signature': out.push(signatureScene(view.players[e.player].civ, e.name, e.player === me)); break;
-      case 'gameOver': out.push(victoryScene(view.players[e.winner].civ, e.winner === me)); break;
+      case 'tactic': if (full) out.push(tacticScene(e.cardId, e.player === me, P[e.player].civ)); break;
+      case 'buildingDestroyed': if (!covered.has(i)) out.push(collapseScene(e.cardId, e.player === me, P[e.player].civ)); break;
+      case 'signature': {
+        const r = other(e.player);
+        out.push(signatureScene(e.name, e.player === me, { civ: P[e.player].civ, age: P[e.player].age, rivalCiv: P[r].civ, rivalUnits: P[r].units.map((u) => u.cardId), rivalUnitsLost: lostAfter(i, r) }));
+        break;
+      }
+      case 'gameOver': out.push(victoryScene(P[e.winner].civ, P[e.winner].age, e.winner === me)); break;
     }
   });
   flushDeploy();

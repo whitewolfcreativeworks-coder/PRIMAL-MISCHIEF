@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import { cityModel, modelFor, type HoloModel } from './models';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import type { HoloModel } from './kit';
 
 /*
  * The hologram theater: a small projected stage that acts out what just
@@ -47,9 +51,9 @@ export class Stage {
 
   private projector: THREE.Object3D[] = [];
   private buildProjector() {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.1, 64), new THREE.MeshBasicMaterial({ color: 0x8ff6ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.1, 64), new THREE.MeshBasicMaterial({ color: 0x8ff6ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(1.05, 64), new THREE.MeshBasicMaterial({ color: 0x2bb6d1, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(1.05, 64), new THREE.MeshBasicMaterial({ color: 0x2bb6d1, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false }));
     disc.rotation.x = -Math.PI / 2;
     const grid = new THREE.PolarGridHelper(1.05, 12, 5, 64, 0x3fd8ef, 0x1f7f90);
     (grid.material as THREE.Material).transparent = true; (grid.material as THREE.Material).opacity = 0.22;
@@ -58,7 +62,7 @@ export class Stage {
     const beamMat = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: 'varying float vY; void main(){ vY = position.y; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: 'uniform float uTime; varying float vY; void main(){ float a = (1.0 - smoothstep(-0.6, 0.6, vY)) * 0.10 * (0.85 + 0.15*sin(uTime*3.0 + vY*20.0)); gl_FragColor = vec4(0.45, 0.95, 1.0, a); }',
+      fragmentShader: 'uniform float uTime; varying float vY; void main(){ float a = (1.0 - smoothstep(-0.6, 0.6, vY)) * 0.045 * (0.85 + 0.15*sin(uTime*3.0 + vY*20.0)); gl_FragColor = vec4(0.45, 0.95, 1.0, a); }',
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 0.9, 1.2, 48, 1, true), beamMat);
@@ -68,16 +72,20 @@ export class Stage {
   }
   private beamMat!: THREE.ShaderMaterial;
 
-  spawn(cardId: string, kind: 'unit' | 'building', color: number, pos: [number, number, number], scale = 1, faceRight = true): HoloModel {
-    const m = modelFor(cardId, color, kind);
-    m.group.position.set(...pos);
-    m.group.scale.setScalar(scale);
-    if (kind === 'unit') m.group.rotation.y = faceRight ? 0 : Math.PI;
+  /** Track a model built elsewhere (figures, vehicles, architecture) so it animates, fades and is disposed with the scene. Adds it to the stage unless it already has a parent. */
+  register(m: HoloModel, pos?: [number, number, number], scale?: number) {
+    if (!m.group.parent) this.root.add(m.group);
+    if (pos) m.group.position.set(...pos);
+    if (scale) m.group.scale.setScalar(scale);
     m.uniforms.uReveal.value = -1;
-    this.root.add(m.group);
     this.models.push(m);
     return m;
   }
+
+  /** Camera framing for the current moment (set by scenes; smoothed by the theater). */
+  shot = { focusX: 0, focusZ: 0, zoom: 1, height: 1 };
+  /** Frame the action: look at scene point (x, z), zoom > 1 moves closer. */
+  frame(x: number, z = 0, zoom = 1, height = 1) { this.shot.focusX = x; this.shot.focusZ = z; this.shot.zoom = zoom; this.shot.height = height; }
 
   /** Sweep a model into existence from the floor up (p: 0..1). */
   reveal(m: HoloModel, p: number) {
@@ -131,23 +139,13 @@ export class Stage {
     this.particles.push({ points, vel, life, gravity: opts.gravity ?? 1.2, age: 0, ttl: opts.ttl ?? 0.9 });
   }
 
-  /** A whole city at a given Age (see models.cityModel), revealed like any other model. */
-  cityAt(civ: string, age: number, color: number, pos: [number, number, number], scale = 1): HoloModel {
-    const m = cityModel(civ, age, color);
-    m.group.position.set(...pos);
-    m.group.scale.setScalar(scale);
-    m.uniforms.uReveal.value = -1;
-    this.root.add(m.group);
-    this.models.push(m);
-    return m;
-  }
-
   private fired = new Set<string>();
   /** Run a one-off effect once per scene. */
   once(key: string, fn: () => void) { if (!this.fired.has(key)) { this.fired.add(key); fn(); } }
 
   /** A floating text label (damage numbers, outcomes). */
   label(text: string, pos: [number, number, number], color = '#ffffff', ttl = 1.2, size = 0.32) {
+    if (typeof document === 'undefined') return; // headless (tests)
     const c = document.createElement('canvas');
     c.width = 512; c.height = 128;
     const g = c.getContext('2d')!;
@@ -240,6 +238,7 @@ export class Stage {
     this.root.clear();
     this.root.rotation.set(0, 0, 0);
     this.facing = 0;
+    this.shot = { focusX: 0, focusZ: 0, zoom: 1, height: 1 };
   }
 }
 
@@ -261,10 +260,41 @@ export class Theater {
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(0x000000, 0);
+    // The canvas is composited with mix-blend-mode: screen, so black is see-through and the bloom glows over the table.
+    this.renderer.setClearColor(0x000000, 1);
     this.camera.position.set(0, 1.3, 3.15);
     this.camera.lookAt(0, 0.2, 0);
+    try {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.stage.scene, this.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.38, 0.3, 0.85);
+      this.composer.addPass(this.bloom);
+      this.composer.addPass(new OutputPass());
+    } catch (e) { console.warn('bloom unavailable', e); this.composer = null; }
   }
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
+
+  /** Render a single frame of a scene at time t (for stills and visual checks). */
+  still(v: Vignette, at: number) {
+    cancelAnimationFrame(this.raf); this.raf = 0;
+    this.queue = []; this.current = null;
+    this.stage.clear();
+    this.cam = { x: 0, z: 0, zoom: 1, height: 1 };
+    v.setup(this.stage);
+    this.resize();
+    const dt = 1 / 30;
+    for (let t = 0; t <= at; t += dt) {
+      this.stage.root.rotation.y = this.stage.facing + Math.sin(this.stage.time * 0.35) * 0.12;
+      v.update(this.stage, Math.min(t, v.duration));
+      this.aim(dt);
+      this.stage.tick(dt);
+    }
+    if (this.composer) this.composer.render(dt); else this.renderer.render(this.stage.scene, this.camera);
+  }
+
+  /** Glow strength (0 turns the bloom pass off). */
+  setBloom(strength: number) { if (this.bloom) { this.bloom.strength = strength; this.bloom.enabled = strength > 0; } }
 
   get busy() { return !!this.current || this.queue.length > 0; }
 
@@ -293,6 +323,7 @@ export class Theater {
     if (!v) { cancelAnimationFrame(this.raf); this.raf = 0; this.renderer.clear(); return; }
     this.t = 0;
     this.stage.clear();
+    this.cam = { x: 0, z: 0, zoom: 1, height: 1 };
     try { v.setup(this.stage); } catch (e) { console.error('hologram scene failed to start', e); this.current = null; this.stage.clear(); this.next(); return; }
     this.last = performance.now();
     this.started = this.last;
@@ -311,8 +342,9 @@ export class Theater {
     this.stage.root.rotation.y = this.stage.facing + Math.sin(this.stage.time * 0.35) * 0.12; // scene facing + gentle orbit
     try {
       v.update(this.stage, Math.min(this.t, v.duration));
+      this.aim(dt);
       this.stage.tick(dt);
-      this.renderer.render(this.stage.scene, this.camera);
+      if (this.composer) this.composer.render(dt); else this.renderer.render(this.stage.scene, this.camera);
     } catch (e) {
       // A broken scene must never freeze the game: log it and move on.
       console.error('hologram scene failed', e);
@@ -323,12 +355,26 @@ export class Theater {
     this.raf = requestAnimationFrame(this.frame);
   };
 
+  private cam = { x: 0, z: 0, zoom: 1, height: 1 };
+  /** Ease the camera toward the scene's requested shot. */
+  private aim(dt: number) {
+    const sh = this.stage.shot, c = this.cam, k = 1 - Math.exp(-dt * 2.2);
+    c.x += (sh.focusX - c.x) * k; c.z += (sh.focusZ - c.z) * k; c.zoom += (sh.zoom - c.zoom) * k; c.height += (sh.height - c.height) * k;
+    this.stage.root.updateMatrixWorld();
+    const focus = new THREE.Vector3(c.x, 0.18, c.z).applyMatrix4(this.stage.root.matrixWorld);
+    const a = this.camera.aspect, tall = a < 1.2 ? 1.05 : a > 1.75 ? 1.02 : 0.9; // wide strips need more room top-to-bottom
+    this.camera.position.set(focus.x * 0.6, focus.y + (1.3 * c.height * tall) / c.zoom, focus.z * 0.6 + (2.6 * tall) / c.zoom);
+    this.camera.lookAt(focus.x, focus.y + 0.02, focus.z);
+  }
+
   private resize() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
     const c = this.renderer.domElement;
     if (c.width !== Math.floor(w * this.renderer.getPixelRatio()) || c.height !== Math.floor(h * this.renderer.getPixelRatio())) {
       this.renderer.setSize(w, h, false);
+      this.composer?.setPixelRatio(this.renderer.getPixelRatio());
+      this.composer?.setSize(w, h);
       this.camera.aspect = w / h;
       // Keep the whole stage in view on tall screens.
       this.camera.fov = w / h < 1.2 ? 48 : 34;
@@ -339,6 +385,7 @@ export class Theater {
   dispose() {
     cancelAnimationFrame(this.raf);
     this.stage.clear();
+    this.composer?.dispose();
     this.renderer.dispose();
   }
 }

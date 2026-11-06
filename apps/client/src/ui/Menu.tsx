@@ -11,8 +11,8 @@ export const OFFLINE = import.meta.env.VITE_OFFLINE === '1';
 
 // ---------------------------------------------------------------- title
 
-export function Title({ onLocal, onOnline, onHelp, onAcademy, resumable, onResume, name, setName }: {
-  onAcademy: () => void; onLocal: () => void; onOnline: () => void; onHelp: () => void; resumable: boolean; onResume: () => void; name: string; setName: (n: string) => void;
+export function Title({ onLocal, onOnline, onHelp, onAcademy, onTheater, resumable, onResume, name, setName }: {
+  onTheater: () => void; onAcademy: () => void; onLocal: () => void; onOnline: () => void; onHelp: () => void; resumable: boolean; onResume: () => void; name: string; setName: (n: string) => void;
 }) {
   return (
     <div className="title-screen">
@@ -30,7 +30,10 @@ export function Title({ onLocal, onOnline, onHelp, onAcademy, resumable, onResum
         <button className="btn primary big" onClick={onLocal}>Play the computer</button>
         <button className="btn big" onClick={onAcademy}>Academy — learn each civilization</button>
         {!OFFLINE && <button className="btn big" onClick={onOnline}>Challenge a friend online</button>}
-        <button className="btn ghost" onClick={onHelp}><Icon name="info" /> How to play</button>
+        <div className="title-minor">
+          <button className="btn ghost" onClick={onHelp}><Icon name="info" /> How to play</button>
+          <button className="btn ghost" onClick={onTheater}>Hologram Theater</button>
+        </div>
       </div>
       <p className="fine">A turn-based card game of ancient civilizations · No timers · No purchases</p>
     </div>
