@@ -19,7 +19,7 @@ function combat(over: Partial<Combat> & { attackerCards: string[] }): Combat {
     type: 'combat', attacker: 0, power: 4, blocked: 0, wallAbsorbed: 0, dealt: 0, blockerCards: [], attackersLost: fates.filter(Boolean).length, blockersLost: bf.filter(Boolean).length,
     target: 'city', wallCard: null, reaction: null, cancelled: false, tideBack: 0, targetDestroyed: false, towerHits: 0, progressRaided: 0,
     trap: null, reactions: over.reaction ? [over.reaction] : [],
-    ...over, attackerFates: fates, blockerFates: bf, blockerFromTrap: over.blockerFromTrap ?? (over.blockerCards ?? []).map(() => false),
+    ...over, tactics: over.tactics ?? null, attackerFates: fates, blockerFates: bf, blockerFromTrap: over.blockerFromTrap ?? (over.blockerCards ?? []).map(() => false),
   };
 }
 
@@ -38,6 +38,11 @@ export function galleryScenes(civ: CivId, rival: CivId): GalleryItem[] {
   add('Battles', 'Walls breached, building falls', () => battleScene(combat({ attackerCards: [units.find((u) => (getCard(u).keywords ?? []).includes('siege')) ?? 'ram', weak[0]], target: 'temple', wallCard: 'walls', wallAbsorbed: 2, dealt: 3, targetDestroyed: true }), true, ctx));
   add('Battles', 'Towers thin the crossing', () => battleScene(combat({ attackerCards: weak, towerHits: 1, wallCard: 'watchtower', attackerFates: ['tower', null], dealt: 1 }), true, ctx));
   add('Battles', 'Raiders carry off Progress', () => battleScene(combat({ attackerCards: ['raiders', 'raiders'], dealt: 2, progressRaided: 4 }), true, ctx));
+  // Roles and formations.
+  const T0 = { attackerMatch: 0, blockerMatch: 0, mixed: false, attackerMassed: null, blockerMassed: null, volley: { attacker: 0, blocker: 0 } };
+  add('Formations', 'Spears hold off riders', () => battleScene(combat({ attacker: 1, attackerCards: ['carth_cavalry', 'carth_cavalry'], blockerCards: ['spearmen'], attackerFates: ['melee', null], tactics: { ...T0, blockerMatch: 1 } }), false, rctx));
+  add('Formations', 'Massed archers volley', () => battleScene(combat({ attackerCards: ['archers', 'archers', 'archers'], blockerCards: ['militia'], blockerFates: [true], dealt: 3, tactics: { ...T0, attackerMassed: 'archer', volley: { attacker: 1, blocker: 0 } } }), true, ctx));
+  add('Formations', 'Mixed army', () => battleScene(combat({ attackerCards: ['spearmen', 'archers', 'raiders'], dealt: 6, tactics: { ...T0, mixed: true } }), true, ctx));
   // Hidden traps springing.
   add('Traps', 'Garrison bursts out', () => battleScene(combat({ attackerCards: strong, blockerCards: ['spearmen', 'militia'], blockerFromTrap: [false, true], blockerFates: [false, true], attackerFates: ['melee', null], trap: { cards: ['militia'], roles: ['garrison'], absorbed: 0, snare: 0 } }), true, ctx));
   add('Traps', 'Snare and brace', () => battleScene(combat({ attackerCards: weak, attackerFates: ['trap', null], dealt: 1, trap: { cards: ['arson', 'farm'], roles: ['snare', 'brace'], absorbed: 2, snare: 1 } }), true, ctx));

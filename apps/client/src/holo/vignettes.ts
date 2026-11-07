@@ -214,6 +214,13 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
         });
         A.forEach((g) => { if (g.fate === 'ambush') g.a.forEach((a, k) => { if (!dyingAt.has(a)) dyingAt.set(a, 1.9 + k * 0.06); }); });
       }
+      // Massed archers on either side loose a volley before the clash.
+      const tac = e.tactics;
+      if (tac?.attackerMassed === 'archer') T.volley(ranged, blockers.length ? blockers : [new THREE.Vector3(0.3, 0, 0)], 1.0, 'arrow', aCol);
+      if (tac?.blockerMassed === 'archer') {
+        T.volley(blockers.filter(isRanged), all, 1.1, missileOf(blockers.find(isRanged) ?? blockers[0]), dCol);
+        A.forEach((g) => { if (g.fate === 'volley') g.a.forEach((a, k) => { if (!dyingAt.has(a)) dyingAt.set(a, 1.75 + k * 0.05); }); });
+      }
       // Ranged attackers shoot across the river twice.
       const bTargets = blockers.length ? blockers : [];
       const tgtPoint = new THREE.Vector3((wall ?? target).group.position.x, 0.2, 0);
@@ -303,6 +310,17 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
       else s.frame(-0.1, 0, 1.15);
 
       if (has('ambush') && t > 1.2) s.once('ambush', () => s.label('Ambush!', [-0.2, 0.8, 0], '#d9c6ff'));
+      const tac = e.tactics;
+      if (tac) {
+        const massedName: Record<string, string> = { archer: 'Massed archers: volley!', spear: 'Massed spears: hedgehog', rider: 'Massed riders: charge!' };
+        if (tac.attackerMassed && massedName[tac.attackerMassed] && t > 0.9) s.once('massA', () => s.label(massedName[tac.attackerMassed!], [-0.5, 0.7, 0], attackerIsMe ? '#aef6ff' : '#ffd2a8', 1.3, 0.26));
+        if (tac.blockerMassed && massedName[tac.blockerMassed] && t > 1.0) s.once('massB', () => s.label(massedName[tac.blockerMassed!], [0.45, 0.7, 0], attackerIsMe ? '#ffd2a8' : '#aef6ff', 1.3, 0.26));
+        if (tac.mixed && t > 1.5) s.once('mixed', () => s.label('Mixed army +2', [-0.3, 0.55, 0], attackerIsMe ? '#aef6ff' : '#ffd2a8', 1.2, 0.24));
+        if (t > 2.15) s.once('match', () => {
+          if (tac.attackerMatch) s.label(`Good matchup +2 ×${tac.attackerMatch}`, [-0.1, 0.6, 0.25], attackerIsMe ? '#aef6ff' : '#ffd2a8', 1.3, 0.24);
+          if (tac.blockerMatch) s.label(`Good matchup +2 ×${tac.blockerMatch}`, [0.35, 0.6, -0.25], attackerIsMe ? '#ffd2a8' : '#aef6ff', 1.3, 0.24);
+        });
+      }
       if (glow) {
         const m = glow.material as THREE.MeshBasicMaterial;
         if (has('shieldWall')) m.opacity = 0.3 * seg(t, 1.6, 2.0) * (1 - seg(t, 3.0, 3.4));
@@ -800,7 +818,7 @@ export function previewScene(cardId: string): Vignette {
     // The troop crosses the river against a token defence and wins through.
     const v = battleScene({
       type: 'combat', attacker: 0, power: c.str ?? 2, blocked: 1, wallAbsorbed: 0, dealt: 2, attackerCards: [cardId], blockerCards: ['militia'],
-      attackersLost: 0, blockersLost: 1, attackerFates: [null], blockerFates: [true], target: 'city', wallCard: null, reaction: null, cancelled: false, tideBack: 0, targetDestroyed: false, towerHits: 0, progressRaided: (c.keywords ?? []).includes('raider') ? 2 : 0, trap: null, blockerFromTrap: [false], reactions: [],
+      attackersLost: 0, blockersLost: 1, attackerFates: [null], blockerFates: [true], target: 'city', wallCard: null, reaction: null, cancelled: false, tideBack: 0, targetDestroyed: false, towerHits: 0, progressRaided: (c.keywords ?? []).includes('raider') ? 2 : 0, trap: null, blockerFromTrap: [false], reactions: [], tactics: null,
     }, true, { aCiv: civ, dCiv: rival, dAge: 2, aAge: 2 });
     return { ...v, caption: c.name };
   }
@@ -814,7 +832,7 @@ export function previewScene(cardId: string): Vignette {
     return { ...battleScene({
       type: 'combat', attacker: 1, power: 4, blocked: 4, wallAbsorbed: 0, dealt: 0, attackerCards: ['spearmen', 'spearmen', 'militia'], blockerCards: ['archers', 'spearmen'],
       attackersLost: cancelled ? 0 : 2, blockersLost: 0, attackerFates: cancelled ? [null, null, null] : r === 'ambush' ? ['ambush', null, 'ambush'] : ['melee', null, 'melee'], blockerFates: [false, false],
-      target: 'city', wallCard: null, reaction: r, reactions: [r], cancelled, tideBack: r === 'turnTheTide' ? 3 : 0, targetDestroyed: false, towerHits: 0, progressRaided: 0, trap: null, blockerFromTrap: [false, false],
+      target: 'city', wallCard: null, reaction: r, reactions: [r], cancelled, tideBack: r === 'turnTheTide' ? 3 : 0, targetDestroyed: false, towerHits: 0, progressRaided: 0, trap: null, blockerFromTrap: [false, false], tactics: null,
     }, false, { aCiv: rival, dCiv: civ, dAge: 2, aAge: 2 }), caption: c.name };
   }
   if (c.hostile) {

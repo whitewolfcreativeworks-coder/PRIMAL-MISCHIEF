@@ -77,6 +77,7 @@ export function validateData(): string[] {
   }
   for (const c of ALL_CARDS) {
     if (c.kind === 'unit' && (c.str === undefined || c.hp === undefined)) errs.push(`${c.id}: unit without stats`);
+    if (c.kind === 'unit' && !c.role) errs.push(`${c.id}: unit without a battlefield role`);
     if ((c.kind === 'building' || c.kind === 'fort') && !c.integrity) errs.push(`${c.id}: no integrity`);
     if (c.kind === 'reaction' && !c.reaction) errs.push(`${c.id}: reaction without kind`);
     if (c.family === 'mil' && c.progress) errs.push(`${c.id}: military cards do not give Progress`);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   actingPlayer, applyAction, chooseAction, CIVS, createGame, getCard, getCiv, HIDDEN_CARD, incomeOf, progressNeeded,
-  RuleError, validateData, viewFor, workingBuildings, type CivId, type GameState, type PlayerId,
+  RuleError, validateData, viewFor, workingBuildings, cityLedger, type CivId, type GameState, type PlayerId,
 } from '../src/index';
 import { playOut } from './simulate';
 
@@ -40,7 +40,7 @@ describe('setup and draft', () => {
     const st = fresh();
     expect(st.phase).toBe('draft');
     expect(st.players[0].hand.length).toBe(0);
-    expect(st.players[0].prosperity).toBe(3);
+    expect(st.players[0].prosperity).toBe(4); // 3 base + 1 spare Food from the land, sold
     expect(st.players[1].prosperity).toBe(1);
     expect(st.players[1].momentum).toBe(1);
     expect(st.players[0].piles.civ.every((c) => getCard(c.cardId).age === 1)).toBe(true);
@@ -120,20 +120,57 @@ describe('Progress and the five Ages', () => {
 // ---------------------------------------------------------------- economy & structure
 
 describe('economy and structural instability', () => {
-  it('income arrives, then the army is paid; unpaid units desert', () => {
+  it('the army eats Food after the city; the hungry desert, strongest fed first', () => {
     const st = ready(fresh());
     build(st, 1, 'farm');
     unit(st, 1, 'spearmen'); unit(st, 1, 'grandArmy');
     st.players[1].prosperity = 0;
-    expect(incomeOf(st.players[1])).toMatchObject({ prosperity: 4, upkeep: 3 });
+    // Land 1 + Farm 2 = 3 Food; Grand Army eats 2 and Spearmen 1: all fed, nothing spare.
+    expect(incomeOf(st.players[1])).toMatchObject({ prosperity: 3, upkeep: 3, food: 3, foodShort: 0 });
     const s = applyAction(st, 0, { type: 'endTurn' }).state;
-    // 4 income: Grand Army (2) is paid first, Spearmen (1) too, 1 left.
     expect(s.players[1].units.length).toBe(2);
-    expect(s.players[1].prosperity).toBe(1);
+    expect(s.players[1].prosperity).toBe(3);
     const st2 = ready(fresh());
     unit(st2, 1, 'grandArmy'); unit(st2, 1, 'grandArmy'); unit(st2, 1, 'spearmen');
     st2.players[1].prosperity = 0;
-    expect(applyAction(st2, 0, { type: 'endTurn' }).state.players[1].units.length).toBe(2); // 3 income pays one Grand Army and the Spearmen
+    // Only the land's 1 Food: both Grand Armies go hungry and desert; the Spearmen eat.
+    expect(applyAction(st2, 0, { type: 'endTurn' }).state.players[1].units.map((u) => u.cardId)).toEqual(['spearmen']);
+  });
+  it('farms feed villages first; fed villages give workers; workplaces need workers', () => {
+    const st = ready(fresh());
+    const p = st.players[0];
+    const v1 = build(st, 0, 'village'), v2 = build(st, 0, 'village');
+    // Land 1 Food: one Village eats, the other goes hungry.
+    let L = cityLedger(p);
+    expect(L.hungry).toEqual([v2]);
+    const farm = build(st, 0, 'farm');
+    L = cityLedger(p);
+    expect(L.hungry).toEqual([]);
+    expect(L.forArmy).toBe(1); // 3 Food, 2 eaten
+    // Age I: the city itself has 1 Worker, each fed Village 1 more: 3 workplaces can run, the 4th stands idle.
+    const q = [0, 1, 2, 3].map(() => build(st, 0, 'quarry'));
+    L = cityLedger(p);
+    expect(L.workers).toBe(3);
+    expect(L.idle.length).toBe(1);
+    expect(L.working.has(q[3]) || L.working.has(q[0])).toBe(true);
+    void v1; void farm;
+  });
+  it('a complete settlement earns Progress; three of a kind earns its specialty', () => {
+    const st = ready(fresh());
+    const p = st.players[0];
+    build(st, 0, 'farm'); build(st, 0, 'village'); build(st, 0, 'quarry');
+    expect(cityLedger(p).sets).toBe(1);
+    expect(incomeOf(p).growth).toBe(1 + 1); // Village +1, one settlement +1
+    build(st, 0, 'farm'); build(st, 0, 'farm');
+    const L = cityLedger(p);
+    expect(L.specialties).toContain('breadbasket');
+    expect(L.food).toBe(1 + 3 * 2 + 3); // land + three Farms + Breadbasket
+  });
+  it('granaries keep spare Food for a hungry turn', () => {
+    let st = ready(fresh());
+    build(st, 1, 'farm'); build(st, 1, 'granary');
+    st = applyAction(st, 0, { type: 'endTurn' }).state;
+    expect(st.players[1].stored).toBe(2); // 3 Food, nothing eaten: 2 kept, 1 sold
   });
   it('Unrest on a Road takes the Market that depends on it offline', () => {
     const st = ready(fresh());
@@ -223,6 +260,35 @@ describe('combat across the river', () => {
     const e = unit(st, 1, 'militia');
     const s = applyAction(st, 1, { type: 'attack', unitUids: [e], target: { kind: 'city' } }).state;
     expect(() => applyAction(s, 0, { type: 'respond', blockerUids: [a] })).toThrow(/exhausted/);
+  });
+});
+
+describe('roles, matchups and formations', () => {
+  const fight = (atk: string[], blk: string[]) => {
+    const st = ready(fresh());
+    const a = atk.map((c) => unit(st, 0, c)), b = blk.map((c) => unit(st, 1, c));
+    const r = attackAndResolve(st, a, { kind: 'city' }, { blockerUids: b });
+    const c = r.events.find((e) => e.type === 'combat');
+    if (!c || c.type !== 'combat') throw new Error('no combat');
+    return { c, st: r.state };
+  };
+  it('a unit facing a role it beats fights with +2', () => {
+    // Numidian Horse (rider, 3) into Archers (archer): +2. Spearmen (spear) into the horse: +2 back.
+    expect(fight(['carth_cavalry'], ['archers']).c).toMatchObject({ power: 5, tactics: { attackerMatch: 1, blockerMatch: 0 } });
+    expect(fight(['carth_cavalry'], ['spearmen']).c).toMatchObject({ power: 3, tactics: { attackerMatch: 0, blockerMatch: 1 } });
+  });
+  it('a mixed army of three roles gets +2; no matchups against an empty bank', () => {
+    const { c } = fight(['spearmen', 'archers', 'carth_cavalry'], []);
+    expect(c.tactics).toMatchObject({ mixed: true, attackerMatch: 0 });
+    expect(c.power).toBe(2 + 3 + 3 + 2); // Kush bowmen make the archers 3
+  });
+  it('massed archers loose a volley before the clash', () => {
+    const { c } = fight(['archers', 'archers', 'kush_archers'], ['militia']);
+    expect(c.tactics).toMatchObject({ attackerMassed: 'archer', volley: { attacker: 1, blocker: 0 } });
+  });
+  it('every unit has a role; the Inca have no riders', () => {
+    expect(validateData()).toEqual([]);
+    for (const id of getCiv('inca').decks.mil.flat()) if (getCard(id).kind === 'unit') expect(getCard(id).role).not.toBe('rider');
   });
 });
 
@@ -388,7 +454,7 @@ describe('civilization traits', () => {
     expect(() => applyAction(kk, 0, { type: 'play', uid: give(kk, 0, 'eliteGuard') })).toThrow(/Prosperity/);
     const a = fresh('aksum', 'kush');
     build(a, 0, 'aksum_adulis');
-    expect(incomeOf(a.players[0]).prosperity).toBe(3 + 1 + 1);
+    expect(incomeOf(a.players[0]).prosperity).toBe(3 + 1 + 1 + 1); // base + Adulis + trade + spare Food
   });
 });
 

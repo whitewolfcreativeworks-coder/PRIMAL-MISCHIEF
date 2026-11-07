@@ -28,6 +28,9 @@ export type Passive =
   | 'buildDiscount' // your Civilization cards cost 1 less (min 1)
   | 'farmBoost'; // each of your Farms produces +1 Prosperity
 
+/** Battlefield role: who beats whom (see ROLE_BEATS in engine.ts). */
+export type UnitRole = 'spear' | 'rider' | 'archer' | 'shield' | 'siege' | 'skirmisher' | 'raider';
+
 export type UnitKeyword = 'ranged' | 'siege' | 'swift' | 'raider' | 'guard';
 
 export type TargetSpec = 'none' | 'enemyBuilding' | 'ownBuilding';
@@ -66,6 +69,12 @@ export interface CardDef {
   progress?: number; // Progress gained when played
   income?: number; // Prosperity each turn while working
   growth?: number; // Progress each turn while working
+  // the city's people and food (see cityLedger in engine.ts)
+  food?: number; // Food made each turn while working
+  eats?: number; // Food this building needs to work (Villages eat first)
+  workers?: number; // Workers this building provides while fed
+  staff?: number; // Workers this building needs to work
+  store?: number; // Food it can keep from one turn to the next
   // buildings and forts
   integrity?: number;
   tags?: string[];
@@ -74,7 +83,8 @@ export interface CardDef {
   // units
   str?: number;
   hp?: number;
-  upkeep?: number; // Prosperity each turn, or the unit deserts
+  upkeep?: number; // Food each turn, or the unit deserts
+  role?: UnitRole;
   keywords?: UnitKeyword[];
   requiresToDeploy?: string;
   // developments, tactics, reactions
@@ -173,6 +183,8 @@ export interface PlayerState {
   peek: Record<Family, string | null> | null;
   /** Hidden traps (owner sees all; the rival sees only how many). */
   traps: TrapInst[];
+  /** Food kept in granaries from last turn. */
+  stored: number;
 }
 
 export type AttackTarget = { kind: 'city' } | { kind: 'building'; uid: string };
@@ -231,7 +243,17 @@ export type Action =
   | { type: 'concede' };
 
 /** How an attacking unit fell: tower arrows, an ambush, a feigned retreat, or the melee itself. */
-export type UnitFate = 'tower' | 'ambush' | 'retreat' | 'trap' | 'melee';
+export type UnitFate = 'tower' | 'ambush' | 'retreat' | 'trap' | 'volley' | 'melee';
+
+/** How roles and formations shaped a fight (for the UI and holograms). */
+export interface CombatTactics {
+  attackerMatch: number; // attacking units that faced a role they beat
+  blockerMatch: number;
+  mixed: boolean; // three or more roles attacked together
+  attackerMassed: UnitRole | null;
+  blockerMassed: UnitRole | null;
+  volley: { attacker: number; blocker: number }; // units hit by massed archers before the clash
+}
 
 /** The trap cards that sprang in a fight or against a scheme, and what each did. */
 export interface TrapReport {
@@ -246,7 +268,7 @@ export interface TrapReport {
 /** Presentation events emitted by the engine so clients can animate what happened. */
 export type GameEvent =
   | { type: 'turnStart'; player: PlayerId; turn: number }
-  | { type: 'income'; player: PlayerId; prosperity: number; growth: number; upkeep: number }
+  | { type: 'income'; player: PlayerId; prosperity: number; growth: number; upkeep: number; food: number; foodSold: number; hungry: number }
   | { type: 'drafted'; player: PlayerId; civ: number; mil: number; discarded: number }
   | { type: 'cardPlayed'; player: PlayerId; cardId: string }
   | { type: 'grow'; player: PlayerId; cardId: string; progress: number }
@@ -276,6 +298,8 @@ export type GameEvent =
       blockerFromTrap: boolean[];
       /** Every reaction in force, from the hand and from traps (reaction is the first). */
       reactions: ReactionKind[];
+      /** Roles and formations (null when the attack was called off). */
+      tactics: CombatTactics | null;
     }
   | { type: 'scheme'; caster: PlayerId; cardId: string; targetCardId: string | null; outcome: 'hit' | 'foiled' | 'mirrored'; mirrorTargetCardId: string | null; trap: TrapReport | null }
   | { type: 'tucked'; player: PlayerId; total: number }

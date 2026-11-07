@@ -2,7 +2,7 @@ import { ageName, getCard, getCiv, progressNeeded, RULES } from './data';
 import { shuffleInPlace } from './rng';
 import { HIDDEN_CARD } from './view';
 import type {
-  UnitFate, TrapInst, TrapReport, TrapRole,
+  UnitFate, TrapInst, TrapReport, TrapRole, UnitRole,
   Action, Age, ApplyResult, AttackTarget, BuildingInst, CardDef, CardInst, CivId, Effect, Family, GameEvent,
   GameState, Passive, PendingAction, PendingAttack, PlayerId, PlayerState, ReactionKind, Resource, UnitInst,
 } from './types';
@@ -31,7 +31,7 @@ export function createGame(seed: number, setups: [PlayerSetup, PlayerSetup], fir
       id: i as PlayerId, name: s.name, civ: s.civ, age: 1, progress: 0, prosperity: 0,
       stability: RULES.startingStability, momentum: 0,
       piles: { civ: [], mil: [] }, discards: { civ: [], mil: [] }, hand: [],
-      buildings: [], units: [], signatureUsed: false, handRevealedTo: false, peek: null, traps: [],
+      buildings: [], units: [], signatureUsed: false, handRevealedTo: false, peek: null, traps: [], stored: 0,
     };
     st.players[i] = p;
     for (const f of ['civ', 'mil'] as Family[]) {
@@ -119,9 +119,8 @@ function clone<T>(v: T): T {
 
 const trait = (p: PlayerState) => getCiv(p.civ).trait.kind;
 
-/** Buildings that are working: not in Unrest and with their requirements met (computed to a fixpoint). */
-export function workingBuildings(p: PlayerState): Set<string> {
-  const working = new Set(p.buildings.filter((b) => b.unrest <= 0).map((b) => b.uid));
+/** Drop buildings whose required neighbours are not working (to a fixpoint). */
+function applyRequires(p: PlayerState, working: Set<string>) {
   for (;;) {
     let changed = false;
     for (const b of p.buildings) {
@@ -133,6 +132,96 @@ export function workingBuildings(p: PlayerState): Set<string> {
     }
     if (!changed) return working;
   }
+}
+
+/** The land around the city: Food and Workers every civilization has before it builds anything. */
+export const CITY_FOOD = 1;
+export const cityWorkers = (p: PlayerState) => p.age;
+
+export interface CityLedger {
+  /** Buildings doing their job: not in Unrest, requirements met, fed and staffed. */
+  working: Set<string>;
+  food: number; // made this turn (land + farms + bonuses)
+  stored: number; // kept from last turn
+  storeCap: number;
+  /** Food eaten by buildings (Villages and Palaces eat first). */
+  cityEats: number;
+  /** Food left for the army after the city eats. */
+  forArmy: number;
+  armyEats: number;
+  /** Buildings without food: they stand idle. */
+  hungry: string[];
+  workers: number;
+  workersUsed: number;
+  /** Workplaces with nobody to run them. */
+  idle: string[];
+  /** Complete settlements (a working Farm, a fed Village, a staffed workplace), +1 Progress each. */
+  sets: number;
+  specialties: ('breadbasket' | 'crowded' | 'stone')[];
+  /** Food left after everyone eats: kept (up to storeCap), the rest sold for Prosperity. */
+  spare: number;
+  keep: number;
+  sold: number;
+}
+
+const tagsOf = (cardId: string) => getCard(cardId).tags ?? [];
+
+/**
+ * Everything about how a city feeds and staffs itself, in one place:
+ * farms make Food; Villages (and Palaces) eat first, and fed Villages give
+ * Workers; workplaces need a Worker each (the most valuable are staffed
+ * first); the army eats what is left; spare Food fills granaries, then sells.
+ */
+export function cityLedger(p: PlayerState): CityLedger {
+  const working = applyRequires(p, new Set(p.buildings.filter((b) => b.unrest <= 0).map((b) => b.uid)));
+  const live = p.buildings.filter((b) => working.has(b.uid));
+  const farms = live.filter((b) => tagsOf(b.cardId).includes('farm'));
+  const boost = live.some((b) => (getCard(b.cardId).passives ?? []).includes('farmBoost')) ? 1 : 0;
+  const breadbasket = farms.length >= 3;
+  let food = CITY_FOOD;
+  for (const b of live) food += getCard(b.cardId).food ?? 0;
+  food += farms.length * (boost + (breadbasket ? 1 : 0));
+  const stored = Math.max(0, p.stored ?? 0);
+  const storeCap = live.reduce((s, b) => s + (getCard(b.cardId).store ?? 0), 0);
+  // The city eats first, in the order it was built.
+  let pantry = food + stored, cityEats = 0;
+  const hungry: string[] = [];
+  for (const b of live) {
+    const need = getCard(b.cardId).eats ?? 0;
+    if (!need) continue;
+    if (pantry >= need) { pantry -= need; cityEats += need; } else { hungry.push(b.uid); working.delete(b.uid); }
+  }
+  let workers = cityWorkers(p);
+  for (const b of p.buildings) if (working.has(b.uid)) workers += getCard(b.cardId).workers ?? 0;
+  // Workers go to the most valuable workplaces first.
+  const idle: string[] = [];
+  let used = 0;
+  const places = p.buildings.filter((b) => working.has(b.uid) && (getCard(b.cardId).staff ?? 0) > 0)
+    .sort((x, y) => getCard(y.cardId).cost - getCard(x.cardId).cost);
+  for (const b of places) {
+    const need = getCard(b.cardId).staff!;
+    if (used + need <= workers) used += need; else { idle.push(b.uid); working.delete(b.uid); }
+  }
+  applyRequires(p, working);
+  const now = p.buildings.filter((b) => working.has(b.uid));
+  const fedHousing = now.filter((b) => tagsOf(b.cardId).includes('housing')).length;
+  const staffed = now.filter((b) => (getCard(b.cardId).staff ?? 0) > 0).length;
+  const workingFarms = now.filter((b) => tagsOf(b.cardId).includes('farm')).length;
+  const sets = Math.min(workingFarms, fedHousing, staffed);
+  const specialties: CityLedger['specialties'] = [];
+  if (breadbasket) specialties.push('breadbasket');
+  if (fedHousing >= 3) specialties.push('crowded');
+  if (now.filter((b) => tagsOf(b.cardId).includes('quarry')).length >= 3) specialties.push('stone');
+  const armyEats = p.units.reduce((s, u) => s + (getCard(u.cardId).upkeep ?? 0), 0);
+  const forArmy = pantry;
+  const spare = Math.max(0, forArmy - armyEats);
+  const keep = Math.min(storeCap, spare);
+  return { working, food, stored, storeCap, cityEats, forArmy, armyEats, hungry, workers, workersUsed: used, idle, sets, specialties, spare, keep, sold: spare - keep };
+}
+
+/** Buildings that are working: not in Unrest, requirements met, fed and staffed. */
+export function workingBuildings(p: PlayerState): Set<string> {
+  return cityLedger(p).working;
 }
 
 export function isWorking(p: PlayerState, uid: string): boolean {
@@ -178,20 +267,27 @@ export function canDeploy(p: PlayerState, card: CardDef): boolean {
   return !card.requiresToDeploy || hasTag(p, card.requiresToDeploy);
 }
 
-/** What a player would collect at their next turn start (used by UI and AI). */
+/**
+ * What a player would collect at their next turn start (used by UI and AI).
+ * Prosperity no longer pays the army: soldiers eat Food (see cityLedger).
+ * `net` = Prosperity gained; `foodShort` = how many Food the army is missing.
+ */
 export function incomeOf(p: PlayerState) {
-  const w = workingBuildings(p);
-  let prosperity = RULES.baseIncome[p.age - 1], growth = 0, upkeep = 0;
-  const farmBoost = hasPassive(p, 'farmBoost');
+  const L = cityLedger(p);
+  const w = L.working;
+  let prosperity = RULES.baseIncome[p.age - 1], growth = 0;
   for (const b of p.buildings) {
     if (!w.has(b.uid)) continue;
     const c = getCard(b.cardId);
     const tags = c.tags ?? [];
-    prosperity += (c.income ?? 0) + (farmBoost && tags.includes('farm') ? 1 : 0) + (trait(p) === 'trade' && tags.includes('harbor') ? 1 : 0);
+    prosperity += (c.income ?? 0) + (trait(p) === 'trade' && tags.includes('harbor') ? 1 : 0);
+    if (tags.includes('quarry') && L.specialties.includes('stone')) prosperity += 1;
     growth += c.growth ?? 0;
   }
-  for (const u of p.units) upkeep += getCard(u.cardId).upkeep ?? 0;
-  return { prosperity, growth, upkeep, net: prosperity - upkeep };
+  growth += L.sets + (L.specialties.includes('crowded') ? 1 : 0);
+  prosperity += L.sold;
+  const foodShort = Math.max(0, L.armyEats - L.forArmy);
+  return { prosperity, growth, upkeep: L.armyEats, net: prosperity, food: L.food, foodShort, ledger: L };
 }
 
 function changeRes(st: GameState, pid: PlayerId, res: Resource, delta: number, events: GameEvent[]) {
@@ -337,19 +433,24 @@ function beginTurn(st: GameState, pid: PlayerId, events: GameEvent[]) {
   for (const u of opp.units) u.blocked = false;
   events.push({ type: 'turnStart', player: pid, turn: st.turn });
 
-  // Income first, then upkeep: the army is paid strongest-first; whoever can't be paid deserts.
+  // The city eats first; the army eats what is left, strongest first, and the hungry desert.
+  // Spare Food fills the granaries and the rest is sold.
   const inc = incomeOf(p);
-  changeRes(st, pid, 'prosperity', inc.prosperity, events);
-  let paid = 0;
+  const L = inc.ledger;
+  let food = L.forArmy, eaten = 0, hungry = 0;
   const byValue = [...p.units].sort((a, b) => getCard(b.cardId).cost - getCard(a.cardId).cost);
   for (const u of byValue) {
     const fee = getCard(u.cardId).upkeep ?? 0;
     if (!fee) continue;
-    if (p.prosperity >= fee) { p.prosperity -= fee; paid += fee; }
-    else { removeUnit(st, pid, u.uid, events, true); log(st, pid, `Unpaid, ${getCard(u.cardId).name} deserts ${p.name}.`); }
+    if (food >= fee) { food -= fee; eaten += fee; }
+    else { hungry++; removeUnit(st, pid, u.uid, events, true); log(st, pid, `Hungry, ${getCard(u.cardId).name} deserts ${p.name}.`); }
   }
-  if (paid) events.push({ type: 'resource', player: pid, res: 'prosperity', delta: -paid });
-  events.push({ type: 'income', player: pid, prosperity: inc.prosperity, growth: inc.growth, upkeep: paid });
+  const keep = Math.min(L.storeCap, food), sold = food - keep;
+  p.stored = keep;
+  const prosperity = inc.prosperity - L.sold + sold;
+  changeRes(st, pid, 'prosperity', prosperity, events);
+  if (L.hungry.length) log(st, pid, `${L.hungry.length} building${L.hungry.length > 1 ? 's go' : ' goes'} hungry in ${p.name}'s city.`);
+  events.push({ type: 'income', player: pid, prosperity, growth: inc.growth, upkeep: eaten, food: L.food, foodSold: sold, hungry: L.hungry.length + hungry });
   if (inc.growth) addProgress(st, pid, inc.growth, events);
   if ((st.phase as string) === 'over') return; // growth may complete the Golden Age
   p.peek = trait(p) === 'scribes' ? { civ: topCard(p, 'civ'), mil: topCard(p, 'mil') } : null;
@@ -483,6 +584,32 @@ function runEffects(st: GameState, effects: Effect[], ctx: EffectCtx, events: Ga
 /** Strength bonus every blocking unit gets for defending its own riverbank. */
 export const RIVERBANK = 1;
 
+// ---------------------------------------------------------------- roles and matchups
+
+/** Who beats whom: a unit facing a role it beats fights with +MATCHUP Strength. */
+export const ROLE_BEATS: Record<UnitRole, UnitRole[]> = {
+  spear: ['rider', 'skirmisher'], // spears hold off horses, wagons and elephants
+  rider: ['archer', 'shield'], // riders run archers down and break shield lines
+  archer: ['spear', 'siege', 'raider'], // archers cut down foot soldiers wading the river
+  shield: ['archer'], // shields blunt arrows
+  skirmisher: ['archer', 'siege'], // fast foot troops (the Inca had no horses)
+  siege: [],
+  raider: [],
+};
+export const MATCHUP = 2;
+/** Three or more different roles in one attack. */
+export const MIXED_BONUS = 2;
+/** How many of one role make a massed formation. */
+export const MASSED = 3;
+
+export const roleOf = (cardId: string): UnitRole => getCard(cardId).role ?? 'spear';
+export const beatsAny = (r: UnitRole, others: UnitRole[]) => others.some((o) => ROLE_BEATS[r].includes(o));
+function massedRole(roles: UnitRole[]): UnitRole | null {
+  const n: Partial<Record<UnitRole, number>> = {};
+  for (const r of roles) n[r] = (n[r] ?? 0) + 1;
+  return (Object.keys(n) as UnitRole[]).find((r) => (n[r] ?? 0) >= MASSED) ?? null;
+}
+
 export const ATTACK_REACTIONS: ReactionKind[] = ['shieldWall', 'feignedRetreat', 'turnTheTide', 'ambush', 'treaty'];
 export const ACTION_REACTIONS: ReactionKind[] = ['vigilantWatch', 'mirror'];
 
@@ -560,7 +687,7 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
     if (cancel === 'feignedRetreat') { for (const u of attackers) damageUnit(st, atk.id, u, 1, events); markFallen('retreat'); }
     else changeRes(st, atk.id, 'prosperity', 3, events);
     log(st, def.id, cancel === 'treaty' ? `${def.name} offers a treaty — the attack is called off.` : `${def.name} feigns a retreat — the attack strikes empty ground.`);
-    events.push({ type: 'combat', attacker: atk.id, power: 0, blocked: 0, wallAbsorbed: 0, dealt: 0, ...detail({ cancelled: true }) });
+    events.push({ type: 'combat', attacker: atk.id, power: 0, blocked: 0, wallAbsorbed: 0, dealt: 0, ...detail({ cancelled: true }), tactics: null });
     return;
   }
 
@@ -573,6 +700,21 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   if (has('ambush')) { for (const u of [...atk.units.filter((x) => attackerUids.includes(x.uid))]) damageUnit(st, atk.id, u, 2, events); markFallen('ambush'); }
   attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
 
+  // Formations: massed archers loose a volley before the clash (both sides).
+  const aRoles0 = atk.units.filter((u) => attackerUids.includes(u.uid)).map((u) => roleOf(u.cardId));
+  const bRoles0 = blockers.filter((b) => def.units.includes(b)).map((b) => roleOf(b.cardId));
+  const aMassed = massedRole(aRoles0), bMassed = massedRole(bRoles0);
+  const volley = { attacker: 0, blocker: 0 };
+  if (aMassed === 'archer') for (const b of blockers.filter((x) => def.units.includes(x))) { damageUnit(st, def.id, b, 1, events); volley.attacker++; }
+  if (bMassed === 'archer') { for (const u of [...atk.units.filter((x) => attackerUids.includes(x.uid))]) { damageUnit(st, atk.id, u, 1, events); volley.blocker++; } markFallen('volley'); }
+  attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
+  const liveBlockers = blockers.filter((b) => def.units.includes(b));
+  // Matchups: each unit facing a role it beats fights harder.
+  const aRoles = attackers.map((u) => roleOf(u.cardId)), bRoles = liveBlockers.map((b) => roleOf(b.cardId));
+  const aMatch = attackers.map((u) => (bRoles.length && beatsAny(roleOf(u.cardId), bRoles) ? MATCHUP : 0));
+  const bMatch = liveBlockers.map((b) => (aRoles.length && beatsAny(roleOf(b.cardId), aRoles) ? MATCHUP : 0));
+  const mixed = new Set(aRoles).size >= 3;
+
   const targetBuilding = targetUid ? def.buildings.find((b) => b.uid === targetUid) : undefined;
   const walls = def.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes('wall') && b.uid !== targetBuilding?.uid);
   const trapWall = sprung.reduce((sum, t, i) => sum + (roles[i] === 'wall' ? trapWallOf(getCard(t.cardId)) : 0), 0);
@@ -580,22 +722,23 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   const structural = !!targetBuilding || walls.length > 0 || trapWall > 0;
   let power = 0;
   const raiders = attackers.filter((u) => (getCard(u.cardId).keywords ?? []).includes('raider')).length;
-  for (const u of attackers) {
-    power += unitStr(atk, u);
+  attackers.forEach((u, i) => {
+    power += unitStr(atk, u) + aMatch[i] + (aMassed === 'rider' ? 1 : 0);
     if (structural && (getCard(u.cardId).keywords ?? []).includes('siege')) power += 2;
-  }
+  });
+  if (mixed) power += MIXED_BONUS;
 
   const shield = has('shieldWall') ? 1 : 0;
   const blockStr = hasPassive(def, 'blockStr') ? 1 : 0;
   let blockDmg = 0;
   // Holding the riverbank: attackers fight their way out of the water, so every blocker gets +1 Strength.
-  for (const b of blockers) blockDmg += unitStr(def, b) + RIVERBANK + blockStr + shield + ((getCard(b.cardId).keywords ?? []).includes('ranged') ? 1 : 0);
+  liveBlockers.forEach((b, i) => { blockDmg += unitStr(def, b) + RIVERBANK + blockStr + shield + bMatch[i] + (bMassed === 'spear' ? 1 : 0) + ((getCard(b.cardId).keywords ?? []).includes('ranged') ? 1 : 0); });
   if (has('turnTheTide')) blockDmg *= 2;
 
-  const blockerHp = blockers.reduce((s, b) => s + unitMaxHp(def, b) + shield - b.damage, 0);
+  const blockerHp = liveBlockers.reduce((s, b) => s + unitMaxHp(def, b) + shield - b.damage, 0);
   const excessBack = distribute(st, atk.id, attackers, blockDmg, 0, events);
-  let overflow = distribute(st, def.id, blockers, power, shield, events);
-  if (blockers.length === 0) overflow = power;
+  let overflow = distribute(st, def.id, liveBlockers, power, shield, events);
+  if (liveBlockers.length === 0) overflow = power;
 
   if (has('turnTheTide') && excessBack > 0) {
     log(st, def.id, `The tide turns! ${excessBack} damage crashes back into ${atk.name}'s city.`);
@@ -629,10 +772,11 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
     if (raiders) progressRaided = loseProgress(st, def.id, 2 * raiders, events, true);
     log(st, atk.id, `${atk.name}'s assault deals ${dealt} damage${wallAbsorbed ? ` after the walls absorb ${wallAbsorbed}` : ''}${progressRaided ? ` and raids ${progressRaided} Progress` : ''}.`);
   } else {
-    if (blockers.length || wallAbsorbed || trapAbsorbed) changeRes(st, def.id, 'momentum', 1, events);
+    if (liveBlockers.length || wallAbsorbed || trapAbsorbed) changeRes(st, def.id, 'momentum', 1, events);
     log(st, def.id, `${def.name} holds the riverbank.`);
   }
-  const fin = detail({ wallCard: walls[0]?.cardId ?? null, tideBack: has('turnTheTide') ? excessBack : 0 });
+  const fin = { ...detail({ wallCard: walls[0]?.cardId ?? null, tideBack: has('turnTheTide') ? excessBack : 0 }),
+    tactics: { attackerMatch: aMatch.filter(Boolean).length, blockerMatch: bMatch.filter(Boolean).length, mixed, attackerMassed: aMassed, blockerMassed: bMassed, volley } };
   dismissGarrison();
   events.push({ type: 'combat', attacker: atk.id, power, blocked: Math.min(power, blockerHp), wallAbsorbed, dealt, ...fin });
 }
