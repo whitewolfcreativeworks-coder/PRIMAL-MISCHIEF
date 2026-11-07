@@ -1,6 +1,7 @@
 import { cardPoolFor, CIVS, getCiv, type CivId, type Difficulty, type Family } from '@pm/engine';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { CivEmblem } from '../art/motifs';
+import cover from '../assets/cover.webp';
 import { CardFace } from './Card';
 import { Inspector } from './Inspector';
 import type { Lesson } from '../game/tutorial';
@@ -16,10 +17,11 @@ export function Title({ onLocal, onOnline, onHelp, onAcademy, onTheater, resumab
 }) {
   return (
     <div className="title-screen">
-      <div className="title-emblems">
-        {CIVS.map((c, i) => <div key={c.id} className="t-emb" style={{ '--i': i } as CSSProperties}><CivEmblem civ={c.id} palette={c.palette} size={58} /></div>)}
+      <div className="title-cover">
+        <img src={cover} alt="" width={840} height={840} decoding="async" />
       </div>
-      <h1 className="logo">Primal <span>Mischief</span></h1>
+      <h1 className="visually-hidden">Primal Mischief</h1>
+      <div className="title-side">
       <p className="tagline">Build civilizations. Dismantle theirs.</p>
       <label className="name-field">
         <span>Your name</span>
@@ -36,6 +38,7 @@ export function Title({ onLocal, onOnline, onHelp, onAcademy, onTheater, resumab
         </div>
       </div>
       <p className="fine">A turn-based card game of ancient civilizations · No timers · No purchases</p>
+      </div>
     </div>
   );
 }

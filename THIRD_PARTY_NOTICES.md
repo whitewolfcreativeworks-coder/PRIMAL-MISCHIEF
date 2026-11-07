@@ -50,3 +50,9 @@ Record every new dependency or asset here with its source URL, licence and
 whether it ships. Avoid: GPL/AGPL code in the client or server, CC-BY-NC or
 other non-commercial licences, unlicensed web images, AI-generated assets
 whose model terms restrict commercial use.
+
+## Project artwork
+
+| Asset | Source | Use |
+|---|---|---|
+| Cover art (`apps/client/src/assets/cover.webp`, `apps/client/public/icon-*.png/jpg`) | Supplied by the project owner, Nov 2026 | Title screen, app icon. Ownership and licence for commercial release to be confirmed by the owner (record the tool or artist and its terms here). |

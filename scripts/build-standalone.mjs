@@ -18,7 +18,10 @@ const files = readdirSync(assets);
 const css = files.filter((f) => f.endsWith('.css')).map((f) => readFileSync(join(assets, f), 'utf8')).join('\n');
 const js = files.filter((f) => f.endsWith('.js')).map((f) => readFileSync(join(assets, f), 'utf8')).join('\n');
 const fragment = process.argv.includes('--fragment');
+const touchIcon = `data:image/jpeg;base64,${readFileSync(join(client, 'public/icon-180.jpg')).toString('base64')}`;
 const head = `<title>Primal Mischief</title>
+<link rel="apple-touch-icon" href="${touchIcon}">
+<link rel="icon" href="${touchIcon}">
 <meta name="theme-color" content="#110d09">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
