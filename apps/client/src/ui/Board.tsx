@@ -1,6 +1,6 @@
 import {
   actingPlayer, ageName, availableBlockers, canPlayCard, costOf, draftNeeded, getCard, getCiv, HIDDEN_CARD, incomeOf, isWorking,
-  maxIntegrity, other, playableReactions, progressNeeded, readyAttackers, RULES, unitMaxHp, unitStr, workingBuildings,
+  maxIntegrity, other, playableReactions, progressNeeded, readyAttackers, RULES, trapText, tuckSpots, unitMaxHp, unitStr, workingBuildings,
   type BuildingInst, type GameEvent, type GameState, type PlayerId, type PlayerState, type UnitInst,
 } from '@pm/engine';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
@@ -27,6 +27,8 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const view = snap.view;
   const [selected, setSelected] = useState<string | null>(null);
   const [targeting, setTargeting] = useState<string | null>(null);
+  /** A hand card being hidden as a trap: waiting for the player to pick a spot. */
+  const [hiding, setHiding] = useState<string | null>(null);
   const [attackers, setAttackers] = useState<string[]>([]);
   const [blockers, setBlockers] = useState<string[]>([]);
   const [reaction, setReaction] = useState<string | null>(null);
@@ -61,7 +63,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const pendingKey = view?.pending ? JSON.stringify(view.pending) : '';
 
   useEffect(() => { setBlockers([]); setReaction(null); }, [pendingKey]);
-  useEffect(() => { if (!myMain) { setAttackers([]); setTargeting(null); setSelected(null); } }, [myMain]);
+  useEffect(() => { if (!myMain) { setAttackers([]); setTargeting(null); setSelected(null); setHiding(null); } }, [myMain]);
   // A fresh draft each turn: suggest a split based on what is already in hand.
   useEffect(() => {
     if (!drafting || !view) return;
@@ -170,6 +172,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       return;
     }
     setTargeting(null);
+    setHiding(null);
     setSelected((s) => (s === uid ? null : uid));
   }
 
@@ -181,7 +184,11 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     setSelected(null);
   }
 
+  const spots = new Set(myMain ? tuckSpots(view, me) : []);
+  const hideAt = (at: string) => { if (!hiding) return; send({ type: 'tuck', uid: hiding, at }); setHiding(null); };
+
   function tapBuilding(owner: PlayerId, b: BuildingInst) {
+    if (hiding && owner === me) { if (spots.has(b.uid)) hideAt(b.uid); return; }
     if (targeting && ((targetSpec === 'enemyBuilding' && owner === opp) || (targetSpec === 'ownBuilding' && owner === me))) {
       send({ type: 'play', uid: targeting, targetUid: b.uid });
       setTargeting(null);
@@ -222,12 +229,14 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     const p = view.players[owner];
     const w = workingBuildings(p);
     const isTarget = (targeting && ((targetSpec === 'enemyBuilding' && owner === opp) || (targetSpec === 'ownBuilding' && owner === me))) || (myMain && attackers.length > 0 && owner === opp);
+    const hidden = (uid: string) => (owner === me ? (p.traps ?? []).filter((t) => t.at === uid).length : 0);
     const threatened = pending?.kind === 'attack' && pending.target.kind === 'building' ? pending.target.uid : pending?.kind === 'action' ? pending.targetUid : undefined;
     return (
       <div className="row buildings">
         {p.buildings.map((b) => (
           <BuildingTile key={b.uid} glow={glowPiece('building', owner === me ? 'me' : 'opp', b.cardId)} b={b} p={p} working={w.has(b.uid)} fx={fx[b.uid]}
-            targetable={!!isTarget} threatened={threatened === b.uid} onTap={() => tapBuilding(owner, b)} floaters={floatFor(b.uid)} />
+            targetable={!!isTarget || (!!hiding && owner === me && spots.has(b.uid))} threatened={threatened === b.uid} onTap={() => tapBuilding(owner, b)} floaters={floatFor(b.uid)}
+            hidden={hidden(b.uid)} />
         ))}
         {ghosts.filter((g) => g.owner === owner && g.kind === 'building').map((g) => <GhostTile key={g.key} cardId={g.cardId} />)}
         {p.buildings.length === 0 && !ghosts.some((g) => g.owner === owner && g.kind === 'building') && <div className="row-empty">{owner === me ? 'Your bank awaits its first building' : 'An empty riverbank'}</div>}
@@ -253,7 +262,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     if (view.phase === 'over') return view.winner === me ? 'Victory' : 'Defeat';
     if (drafting) return 'Choose your cards';
     if (responding) return pending?.kind === 'attack' ? 'Defend the riverbank!' : 'Counter the scheme?';
-    if (myMain) return targeting ? 'Choose a target' : attackers.length ? `Crossing with ${attackPower} strength` : 'Your turn';
+    if (myMain) return hiding ? 'Hide it where?' : targeting ? 'Choose a target' : attackers.length ? `Crossing with ${attackPower} strength` : 'Your turn';
     if (view.phase === 'draft') return `${O.name} is choosing cards…`;
     if (view.phase === 'response') return `${O.name} is responding…`;
     return `${O.name} is moving…`;
@@ -303,7 +312,14 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
                 </>
               )}
               {myMain && targeting && <><span className="hint">Tap a highlighted building</span><button className="btn ghost" onClick={() => setTargeting(null)}>Cancel</button></>}
-              {myMain && !attackers.length && !targeting && (
+              {myMain && hiding && (
+                <>
+                  <span className="hint">Tap one of your buildings, or</span>
+                  <button className="btn trap-btn" disabled={!spots.has('city')} onClick={() => hideAt('city')}><Icon name="city" size={16} /> Under the city</button>
+                  <button className="btn ghost" onClick={() => setHiding(null)}>Cancel</button>
+                </>
+              )}
+              {myMain && !attackers.length && !targeting && !hiding && (
                 <>
                   {ready.size > 0 && <span className="hint">Tap your glowing units to cross the river</span>}
                   <button className={`btn sig ${glowBtn('signature')}`} disabled={P.signatureUsed || P.momentum < civ.signature.cost} onClick={() => setConfirmSig(true)}>
@@ -363,6 +379,12 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
               <button className="btn primary big" onClick={playSelected}>
                 {getCard(selCard.cardId).target && getCard(selCard.cardId).target !== 'none' ? 'Choose target' : getCard(selCard.cardId).kind === 'unit' ? 'Deploy' : getCard(selCard.cardId).family === 'civ' ? 'Build' : 'Play'}
               </button>
+            )}
+            {myMain && spots.size > 0 && (
+              <div className="trap-offer">
+                <button className="btn trap-btn big" onClick={() => { setHiding(selCard.uid); setSelected(null); play('tap'); }}><Icon name="trap" size={18} /> Hide as a trap</button>
+                <p><b>If that spot is hit during your rival’s next turn:</b> {trapText(getCard(selCard.cardId))} Otherwise it returns to your deck. Your rival sees only that you hid something.</p>
+              </div>
             )}
             <button className="btn ghost big" onClick={() => setSelected(null)}>Close</button>
           </Inspector>
@@ -479,6 +501,11 @@ function PlayerBar({ p, isMe, active, extra, floaters, over }: { p: PlayerState;
           <Icon name="civ" size={13} />{p.piles.civ.length}<Icon name="mil" size={13} />{p.piles.mil.length}
         </div>
         {!isMe && <div className="chip small" title="Cards in hand"><Icon name="hand" size={13} />{p.hand.length}</div>}
+        {(p.traps ?? []).length > 0 && (
+          <div className={`chip small traps ${isMe ? '' : 'rival'}`} title={isMe ? 'Your hidden traps (they return to your deck at the start of your turn)' : 'Hidden traps: somewhere under their buildings or city'}>
+            <Icon name="trap" size={13} />{p.traps.length}{isMe && p.traps.some((t) => t.at === 'city') ? <em>{p.traps.filter((t) => t.at === 'city').length} under city</em> : !isMe ? <em>hidden</em> : null}
+          </div>
+        )}
       </div>
       {extra}
       <div className="floaters">{floaters}</div>
@@ -526,8 +553,8 @@ function DraftPanel({ P, need, civPick, setCiv, discards, onDraft, glow }: {
   );
 }
 
-function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters, glow }: {
-  glow?: boolean; b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
+function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters, glow, hidden = 0 }: {
+  hidden?: number; glow?: boolean; b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
 }) {
   const card = getCard(b.cardId);
   const pal = paletteFor(card, p.civ);
@@ -550,6 +577,7 @@ function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floate
       </div>
       {state === 'unrest' && <div className="bld-flag unrest"><Icon name="unrest" size={12} />{b.unrest}</div>}
       {state === 'unsupported' && <div className="bld-flag broken"><Icon name="broken" size={12} /></div>}
+      {hidden > 0 && <div className="bld-traps" aria-label={`${hidden} hidden trap${hidden > 1 ? 's' : ''}`}>{Array.from({ length: hidden }, (_, i) => <i key={i} />)}</div>}
       <div className="floaters">{floaters}</div>
     </button>
   );

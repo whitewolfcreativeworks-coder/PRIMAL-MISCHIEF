@@ -37,6 +37,10 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
             <p>When attacked or targeted by a Hostile card, the defender may play one Reaction: ambush the crossing, retreat, turn the tide, offer a treaty, foil the plot, or mirror it back on its caster. One response per threat.</p>
           </section>
           <section>
+            <h4><Icon name="trap" /> Hidden traps</h4>
+            <p>On your turn, tap a card you don’t need and <b>Hide as a trap</b> under one of your buildings or your city (up to {RULES.trapsPerSpot} in one place). Your rival sees how many you hid, never what or where. If they attack or scheme against that spot before your next turn, every card there springs: soldiers burst out to fight, reactions fire for free, forts stand as walls, tactics snare the attackers, and Civilization cards brace the spot. Unsprung traps return to your deck. A wise attacker sends a cheap unit first to test the ground.</p>
+          </section>
+          <section>
             <h4><Icon name="momentum" /> Momentum</h4>
             <p>Winning a fight, holding the bank, playing a reaction and entering a new Age earn Momentum. Spend 3 on your civilization’s Signature ability. No timers: think as long as you like.</p>
           </section>

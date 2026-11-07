@@ -1,7 +1,8 @@
 import { ageName, getCard, getCiv, progressNeeded, RULES } from './data';
 import { shuffleInPlace } from './rng';
+import { HIDDEN_CARD } from './view';
 import type {
-  UnitFate,
+  UnitFate, TrapInst, TrapReport, TrapRole,
   Action, Age, ApplyResult, AttackTarget, BuildingInst, CardDef, CardInst, CivId, Effect, Family, GameEvent,
   GameState, Passive, PendingAction, PendingAttack, PlayerId, PlayerState, ReactionKind, Resource, UnitInst,
 } from './types';
@@ -23,14 +24,14 @@ export function createGame(seed: number, setups: [PlayerSetup, PlayerSetup], fir
   const st: GameState = {
     version: 2, seed, rng: seed >>> 0 || 1, turn: 0, active: 0, phase: 'draft', pending: null,
     players: [null as unknown as PlayerState, null as unknown as PlayerState],
-    winner: null, winReason: null, uidCounter: 0, log: [],
+    winner: null, winReason: null, uidCounter: 0, log: [], struck: [],
   };
   setups.forEach((s, i) => {
     const p: PlayerState = {
       id: i as PlayerId, name: s.name, civ: s.civ, age: 1, progress: 0, prosperity: 0,
       stability: RULES.startingStability, momentum: 0,
       piles: { civ: [], mil: [] }, discards: { civ: [], mil: [] }, hand: [],
-      buildings: [], units: [], signatureUsed: false, handRevealedTo: false, peek: null,
+      buildings: [], units: [], signatureUsed: false, handRevealedTo: false, peek: null, traps: [],
     };
     st.players[i] = p;
     for (const f of ['civ', 'mil'] as Family[]) {
@@ -59,6 +60,57 @@ function newUid(st: GameState): string {
 function log(st: GameState, player: PlayerId | null, text: string) {
   st.log.push({ turn: st.turn, player, text });
   if (st.log.length > 200) st.log.splice(0, st.log.length - 200);
+}
+
+// ---------------------------------------------------------------- hidden traps
+
+export const trapsOf = (p: PlayerState): TrapInst[] => (p.traps ??= []);
+
+/** What a card does when it springs from under a building: decided by its kind, so every card has a use. */
+export function trapRole(card: CardDef): TrapRole {
+  if (card.kind === 'unit') return 'garrison';
+  if (card.kind === 'reaction') return 'reaction';
+  if (card.kind === 'fort') return 'wall';
+  if (card.kind === 'tactic') return 'snare';
+  return 'brace';
+}
+/** Damage a sprung Civilization card soaks: higher Ages brace harder. */
+export const braceOf = (card: CardDef) => card.age + 1;
+/** Damage a sprung fort soaks, as a wall for that one fight. */
+export const trapWallOf = (card: CardDef) => card.integrity ?? 3;
+/** Damage each attacker takes from a sprung tactic. */
+export const SNARE_DAMAGE = 1;
+
+/** Spring every known trap under `spot` (a building uid or 'city'): they are removed and returned for resolution. */
+function springTraps(st: GameState, pid: PlayerId, spot: string, events: GameEvent[]): TrapInst[] {
+  const p = st.players[pid];
+  const all = trapsOf(p);
+  const sprung = all.filter((t) => t.at === spot && t.cardId !== HIDDEN_CARD);
+  if (!sprung.length) return [];
+  p.traps = all.filter((t) => !sprung.includes(t));
+  const where = spot === 'city' ? 'city' : p.buildings.find((b) => b.uid === spot)?.cardId ?? 'city';
+  events.push({ type: 'trapSprung', player: pid, at: where, cards: sprung.map((t) => t.cardId) });
+  log(st, pid, `Hidden traps spring at ${where === 'city' ? 'the city' : getCard(where).name}: ${sprung.map((t) => getCard(t.cardId).name).join(', ')}!`);
+  changeRes(st, pid, 'momentum', 1, events);
+  return sprung;
+}
+
+/** Unsprung traps go back into their decks at the start of their owner's turn. */
+function returnTraps(st: GameState, pid: PlayerId, events: GameEvent[]) {
+  const p = st.players[pid];
+  const back = trapsOf(p).splice(0);
+  let n = 0;
+  const touched = new Set<Family>();
+  for (const t of back) {
+    if (t.cardId === HIDDEN_CARD) continue;
+    const card = getCard(t.cardId);
+    if (card.token || card.age < p.age - 1) continue; // retired tier: leaves the game
+    p.piles[card.family].push({ uid: t.uid, cardId: t.cardId });
+    touched.add(card.family);
+    n++;
+  }
+  for (const f of touched) shuffleInPlace(st, p.piles[f]);
+  if (n) { events.push({ type: 'trapsReturned', player: pid, n }); log(st, pid, `${n} unsprung trap${n === 1 ? '' : 's'} of ${p.name} return${n === 1 ? 's' : ''} to the decks.`); }
 }
 
 function clone<T>(v: T): T {
@@ -279,6 +331,8 @@ function beginTurn(st: GameState, pid: PlayerId, events: GameEvent[]) {
   const p = st.players[pid];
   const opp = st.players[other(pid)];
   p.signatureUsed = false;
+  st.struck = [];
+  returnTraps(st, pid, events);
   for (const u of p.units) { u.ready = true; u.attacked = false; }
   for (const u of opp.units) u.blocked = false;
   events.push({ type: 'turnStart', player: pid, turn: st.turn });
@@ -347,7 +401,14 @@ function checkVictory(st: GameState, events: GameEvent[]) {
 
 // ====================================================================== effects
 
-interface EffectCtx { self: PlayerId; targetUid?: string }
+interface EffectCtx { self: PlayerId; targetUid?: string; /** Damage a sprung trap still soaks from this scheme. */ shield?: { left: number; used: number } }
+
+function soak(ctx: EffectCtx, amount: number): number {
+  if (!ctx.shield || ctx.shield.left <= 0) return amount;
+  const take = Math.min(ctx.shield.left, amount);
+  ctx.shield.left -= take; ctx.shield.used += take;
+  return amount - take;
+}
 
 function runEffects(st: GameState, effects: Effect[], ctx: EffectCtx, events: GameEvent[]) {
   const self = st.players[ctx.self];
@@ -367,11 +428,13 @@ function runEffects(st: GameState, effects: Effect[], ctx: EffectCtx, events: Ga
         else for (let i = 0; i < e.n; i++) drawFrom(st, self.id, self.piles.civ.length >= self.piles.mil.length ? 'civ' : 'mil', 1);
         break;
       case 'damageBuilding':
-        if (ctx.targetUid) damageBuilding(st, opp.id, ctx.targetUid, e.amount, events);
+        if (ctx.targetUid) damageBuilding(st, opp.id, ctx.targetUid, soak(ctx, e.amount), events);
         break;
-      case 'damageCity':
-        changeRes(st, opp.id, 'stability', -e.amount, events);
+      case 'damageCity': {
+        const a = soak(ctx, e.amount);
+        if (a) changeRes(st, opp.id, 'stability', -a, events);
         break;
+      }
       case 'unrest': {
         const b = opp.buildings.find((x) => x.uid === ctx.targetUid);
         if (b) { b.unrest = Math.max(b.unrest, e.turns); events.push({ type: 'buildingUnrest', player: opp.id, uid: b.uid }); }
@@ -437,49 +500,84 @@ function distribute(st: GameState, pid: PlayerId, units: UnitInst[], dmg: number
   return Math.max(0, left);
 }
 
-function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[], reaction: ReactionKind | null, events: GameEvent[]) {
+function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[], handReaction: ReactionKind | null, events: GameEvent[]) {
   const atk = st.players[pend.attacker];
   const def = st.players[other(pend.attacker)];
   let attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
-  const blockers = def.units.filter((u) => blockerUids.includes(u.uid));
+  const targetUid = pend.target.kind === 'building' ? pend.target.uid : null;
+  const tgtCard = targetUid ? def.buildings.find((b) => b.uid === targetUid)?.cardId ?? 'city' : 'city';
+
+  // Hidden traps at the target spring on contact (unless a reaction from hand calls the attack off first).
+  const handCancels = handReaction === 'feignedRetreat' || handReaction === 'treaty';
+  const sprung = handCancels ? [] : springTraps(st, def.id, targetUid ?? 'city', events);
+  const roles = sprung.map((t) => trapRole(getCard(t.cardId)));
+  const reactions: ReactionKind[] = handReaction ? [handReaction] : [];
+  sprung.forEach((t, i) => {
+    const r = getCard(t.cardId).reaction;
+    if (roles[i] === 'reaction' && r && ATTACK_REACTIONS.includes(r) && !reactions.includes(r)) reactions.push(r);
+  });
+  const has = (r: ReactionKind) => reactions.includes(r);
+  const cancel: ReactionKind | null = has('feignedRetreat') ? 'feignedRetreat' : has('treaty') ? 'treaty' : null;
+  const trap: TrapReport | null = sprung.length ? { cards: sprung.map((t) => t.cardId), roles, absorbed: 0, snare: 0 } : null;
+  // Every sprung card is spent; garrison troops are discarded when they leave the field.
+  sprung.forEach((t, i) => { if (roles[i] !== 'garrison' || cancel) discard(st, def.id, { uid: t.uid, cardId: t.cardId }); });
+
+  // Garrison troops burst out and fight as blockers for this one fight.
+  const garrison: UnitInst[] = cancel ? [] : sprung.filter((_, i) => roles[i] === 'garrison')
+    .map((t) => ({ uid: t.uid, cardId: t.cardId, damage: 0, ready: false, attacked: false, blocked: true, buff: 0 }));
+  def.units.push(...garrison);
+  const blockers = [...def.units.filter((u) => blockerUids.includes(u.uid)), ...garrison];
   for (const b of blockers) b.blocked = true;
   const attackerCards = attackers.map((u) => u.cardId);
   const blockerCards = blockers.map((u) => u.cardId);
-  const targetUid = pend.target.kind === 'building' ? pend.target.uid : null;
-  const tgtCard = targetUid ? def.buildings.find((b) => b.uid === targetUid)?.cardId ?? 'city' : 'city';
+  const blockerFromTrap = blockers.map((b) => garrison.includes(b));
   let towerHits = 0, progressRaided = 0;
   // Exactly who fell, and to what, so the hologram can stage each death.
   const attackerUids = attackers.map((u) => u.uid);
   const fates: Record<string, UnitFate> = {};
   const markFallen = (why: UnitFate) => { for (const uid of attackerUids) if (!fates[uid] && !atk.units.some((u) => u.uid === uid)) fates[uid] = why; };
+  const blockerFates = () => blockers.map((b) => !def.units.some((u) => u.uid === b.uid));
   const detail = (extra: { wallCard?: string | null; cancelled?: boolean; tideBack?: number }) => ({
     attackerCards, blockerCards,
     attackerFates: (markFallen('melee'), attackerUids.map((uid) => fates[uid] ?? null)),
-    blockerFates: blockers.map((b) => !def.units.some((u) => u.uid === b.uid)),
+    blockerFates: blockerFates(),
     attackersLost: attackerCards.length - atk.units.filter((u) => pend.unitUids.includes(u.uid)).length,
-    blockersLost: blockerCards.length - def.units.filter((u) => blockerUids.includes(u.uid)).length,
-    target: tgtCard, wallCard: extra.wallCard ?? null, reaction, cancelled: extra.cancelled ?? false, tideBack: extra.tideBack ?? 0,
+    blockersLost: blockerFates().filter(Boolean).length,
+    target: tgtCard, wallCard: extra.wallCard ?? null, reaction: reactions[0] ?? null, reactions, cancelled: extra.cancelled ?? false, tideBack: extra.tideBack ?? 0,
     targetDestroyed: !!targetUid && !def.buildings.some((b) => b.uid === targetUid), towerHits, progressRaided,
+    trap, blockerFromTrap,
   });
+  /** Garrison troops leave once the fight is over (their cards go to the discard). */
+  const dismissGarrison = () => {
+    for (const g of garrison) {
+      if (!def.units.some((u) => u.uid === g.uid)) continue;
+      def.units = def.units.filter((u) => u.uid !== g.uid);
+      discard(st, def.id, { uid: g.uid, cardId: g.cardId });
+    }
+  };
 
-  if (reaction === 'feignedRetreat' || reaction === 'treaty') {
-    if (reaction === 'feignedRetreat') { for (const u of attackers) damageUnit(st, atk.id, u, 1, events); markFallen('retreat'); }
+  if (cancel) {
+    if (cancel === 'feignedRetreat') { for (const u of attackers) damageUnit(st, atk.id, u, 1, events); markFallen('retreat'); }
     else changeRes(st, atk.id, 'prosperity', 3, events);
-    log(st, def.id, reaction === 'treaty' ? `${def.name} offers a treaty — the attack is called off.` : `${def.name} feigns a retreat — the attack strikes empty ground.`);
+    log(st, def.id, cancel === 'treaty' ? `${def.name} offers a treaty — the attack is called off.` : `${def.name} feigns a retreat — the attack strikes empty ground.`);
     events.push({ type: 'combat', attacker: atk.id, power: 0, blocked: 0, wallAbsorbed: 0, dealt: 0, ...detail({ cancelled: true }) });
     return;
   }
 
-  // Towers loose arrows as the attackers cross the river.
+  // Towers loose arrows as the attackers cross the river; snares and ambushes hit before the clash.
   const w = workingBuildings(def);
   const towers = def.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes('tower')).length;
   if (towers) { towerHits = towers; for (const u of [...attackers]) damageUnit(st, atk.id, u, towers, events); markFallen('tower'); }
-  if (reaction === 'ambush') { for (const u of [...attackers]) damageUnit(st, atk.id, u, 2, events); markFallen('ambush'); }
+  const snare = roles.filter((r) => r === 'snare').length * SNARE_DAMAGE;
+  if (snare && trap) { trap.snare = snare; for (const u of [...atk.units.filter((x) => attackerUids.includes(x.uid))]) damageUnit(st, atk.id, u, snare, events); markFallen('trap'); }
+  if (has('ambush')) { for (const u of [...atk.units.filter((x) => attackerUids.includes(x.uid))]) damageUnit(st, atk.id, u, 2, events); markFallen('ambush'); }
   attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
 
   const targetBuilding = targetUid ? def.buildings.find((b) => b.uid === targetUid) : undefined;
   const walls = def.buildings.filter((b) => w.has(b.uid) && (getCard(b.cardId).passives ?? []).includes('wall') && b.uid !== targetBuilding?.uid);
-  const structural = !!targetBuilding || walls.length > 0;
+  const trapWall = sprung.reduce((sum, t, i) => sum + (roles[i] === 'wall' ? trapWallOf(getCard(t.cardId)) : 0), 0);
+  const brace = sprung.reduce((sum, t, i) => sum + (roles[i] === 'brace' ? braceOf(getCard(t.cardId)) : 0), 0);
+  const structural = !!targetBuilding || walls.length > 0 || trapWall > 0;
   let power = 0;
   const raiders = attackers.filter((u) => (getCard(u.cardId).keywords ?? []).includes('raider')).length;
   for (const u of attackers) {
@@ -487,23 +585,26 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
     if (structural && (getCard(u.cardId).keywords ?? []).includes('siege')) power += 2;
   }
 
-  const shield = reaction === 'shieldWall' ? 1 : 0;
+  const shield = has('shieldWall') ? 1 : 0;
   const blockStr = hasPassive(def, 'blockStr') ? 1 : 0;
   let blockDmg = 0;
   // Holding the riverbank: attackers fight their way out of the water, so every blocker gets +1 Strength.
   for (const b of blockers) blockDmg += unitStr(def, b) + RIVERBANK + blockStr + shield + ((getCard(b.cardId).keywords ?? []).includes('ranged') ? 1 : 0);
-  if (reaction === 'turnTheTide') blockDmg *= 2;
+  if (has('turnTheTide')) blockDmg *= 2;
 
   const blockerHp = blockers.reduce((s, b) => s + unitMaxHp(def, b) + shield - b.damage, 0);
   const excessBack = distribute(st, atk.id, attackers, blockDmg, 0, events);
   let overflow = distribute(st, def.id, blockers, power, shield, events);
   if (blockers.length === 0) overflow = power;
 
-  if (reaction === 'turnTheTide' && excessBack > 0) {
+  if (has('turnTheTide') && excessBack > 0) {
     log(st, def.id, `The tide turns! ${excessBack} damage crashes back into ${atk.name}'s city.`);
     changeRes(st, atk.id, 'stability', -excessBack, events);
   }
 
+  // A sprung fort stands as a wall for this fight; braced buildings soak what gets through.
+  let trapAbsorbed = Math.min(trapWall, overflow);
+  overflow -= trapAbsorbed;
   let wallAbsorbed = 0;
   for (const wall of walls) {
     if (overflow <= 0) break;
@@ -512,6 +613,10 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
     overflow -= take;
     damageBuilding(st, def.id, wall.uid, take, events);
   }
+  const braced = Math.min(brace, overflow);
+  overflow -= braced;
+  trapAbsorbed += braced;
+  if (trap) trap.absorbed = trapAbsorbed;
 
   let dealt = 0;
   if (overflow > 0) {
@@ -524,32 +629,51 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
     if (raiders) progressRaided = loseProgress(st, def.id, 2 * raiders, events, true);
     log(st, atk.id, `${atk.name}'s assault deals ${dealt} damage${wallAbsorbed ? ` after the walls absorb ${wallAbsorbed}` : ''}${progressRaided ? ` and raids ${progressRaided} Progress` : ''}.`);
   } else {
-    if (blockers.length || wallAbsorbed) changeRes(st, def.id, 'momentum', 1, events);
+    if (blockers.length || wallAbsorbed || trapAbsorbed) changeRes(st, def.id, 'momentum', 1, events);
     log(st, def.id, `${def.name} holds the riverbank.`);
   }
-  events.push({ type: 'combat', attacker: atk.id, power, blocked: Math.min(power, blockerHp), wallAbsorbed, dealt,
-    ...detail({ wallCard: walls[0]?.cardId ?? null, tideBack: reaction === 'turnTheTide' ? excessBack : 0 }) });
+  const fin = detail({ wallCard: walls[0]?.cardId ?? null, tideBack: has('turnTheTide') ? excessBack : 0 });
+  dismissGarrison();
+  events.push({ type: 'combat', attacker: atk.id, power, blocked: Math.min(power, blockerHp), wallAbsorbed, dealt, ...fin });
 }
 
 function mirrorTarget(p: PlayerState): string | undefined {
   return [...p.buildings].sort((a, b) => getCard(b.cardId).cost - getCard(a.cardId).cost)[0]?.uid;
 }
 
-function resolveAction(st: GameState, pend: PendingAction, reaction: ReactionKind | null, events: GameEvent[]) {
+function resolveAction(st: GameState, pend: PendingAction, handReaction: ReactionKind | null, events: GameEvent[]) {
   const card = getCard(pend.card.cardId);
   const caster = st.players[pend.caster];
+  const defender = other(pend.caster);
   discard(st, pend.caster, pend.card);
-  const defP = st.players[other(pend.caster)];
+  const defP = st.players[defender];
   const targetCardId = pend.targetUid ? defP.buildings.find((b) => b.uid === pend.targetUid)?.cardId ?? null : null;
+
+  // Hidden traps at the targeted spot (the building, or the city for schemes with no target) spring first.
+  let reaction = handReaction;
+  let trap: TrapReport | null = null;
+  const shield = { left: 0, used: 0 };
+  if (!reaction) {
+    const sprung = springTraps(st, defender, pend.targetUid ?? 'city', events);
+    if (sprung.length) {
+      const cards = sprung.map((t) => getCard(t.cardId));
+      const roles = cards.map(trapRole);
+      trap = { cards: cards.map((c) => c.id), roles, absorbed: 0, snare: 0 };
+      sprung.forEach((t) => discard(st, defender, { uid: t.uid, cardId: t.cardId }));
+      // Soldiers, snares, watchmen and ambushers catch the agents; a Mirror sends the scheme home.
+      if (cards.some((c) => c.reaction === 'mirror')) reaction = 'mirror';
+      else if (cards.some((c, i) => roles[i] === 'garrison' || roles[i] === 'snare' || c.reaction === 'vigilantWatch' || c.reaction === 'ambush')) reaction = 'vigilantWatch';
+      cards.forEach((c, i) => { if (roles[i] === 'brace') shield.left += braceOf(c); if (roles[i] === 'wall') shield.left += trapWallOf(c); });
+    }
+  }
   const scheme = (outcome: 'hit' | 'foiled' | 'mirrored', mirrorTargetCardId: string | null = null) =>
-    events.push({ type: 'scheme', caster: pend.caster, cardId: card.id, targetCardId, outcome, mirrorTargetCardId });
+    events.push({ type: 'scheme', caster: pend.caster, cardId: card.id, targetCardId, outcome, mirrorTargetCardId, trap });
   if (reaction === 'vigilantWatch') {
     scheme('foiled');
-    log(st, other(pend.caster), `${card.name} is discovered and foiled.`);
+    log(st, defender, `${card.name} is ${trap ? 'caught by a hidden trap' : 'discovered'} and foiled.`);
     return;
   }
   if (reaction === 'mirror') {
-    const defender = other(pend.caster);
     log(st, defender, `${card.name} is turned back on ${caster.name}!`);
     events.push({ type: 'reversed', player: defender, cardId: card.id });
     const t = card.target === 'enemyBuilding' ? mirrorTarget(caster) : pend.targetUid;
@@ -557,8 +681,10 @@ function resolveAction(st: GameState, pend: PendingAction, reaction: ReactionKin
     runEffects(st, card.effects ?? [], { self: defender, targetUid: t }, events);
     return;
   }
-  scheme('hit');
-  runEffects(st, card.effects ?? [], { self: pend.caster, targetUid: pend.targetUid }, events);
+  const ev = { type: 'scheme', caster: pend.caster, cardId: card.id, targetCardId, outcome: 'hit', mirrorTargetCardId: null, trap } as GameEvent;
+  events.push(ev);
+  runEffects(st, card.effects ?? [], { self: pend.caster, targetUid: pend.targetUid, shield }, events);
+  if (trap) trap.absorbed = shield.used;
 }
 
 // ====================================================================== validation
@@ -568,6 +694,11 @@ function requireMain(st: GameState, pid: PlayerId) {
   if (st.active !== pid) throw new RuleError('It is not your turn.');
   if (st.phase === 'draft') throw new RuleError('Pick your cards first.');
   if (st.phase !== 'main') throw new RuleError('Waiting for a response.');
+}
+
+/** null when `pid` may take main-phase actions, else the reason. */
+export function requireMainPhase(st: GameState, pid: PlayerId): string | null {
+  try { requireMain(st, pid); return null; } catch (e) { return (e as Error).message; }
 }
 
 export function canPlayCard(st: GameState, pid: PlayerId, uid: string): string | null {
@@ -676,12 +807,27 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
         if (card.hostile) {
           st.phase = 'response';
           st.pending = { kind: 'action', caster: pid, card: inst, targetUid: action.targetUid };
+          (st.struck ??= []).push(action.targetUid ?? 'city');
         } else {
           discard(st, pid, inst);
           events.push({ type: 'tactic', player: pid, cardId: card.id });
           runEffects(st, card.effects ?? [], { self: pid, targetUid: action.targetUid }, events);
         }
       }
+      break;
+    }
+    case 'tuck': {
+      requireMain(st, pid);
+      const p = st.players[pid];
+      const inst = p.hand.find((c) => c.uid === action.uid);
+      if (!inst) throw new RuleError('That card is not in your hand.');
+      const at = String(action.at);
+      if (at !== 'city' && !p.buildings.some((b) => b.uid === at)) throw new RuleError('Tuck it under one of your buildings or your city.');
+      if (trapsOf(p).filter((t) => t.at === at).length >= RULES.trapsPerSpot) throw new RuleError(`At most ${RULES.trapsPerSpot} cards can hide in one place.`);
+      p.hand = p.hand.filter((c) => c.uid !== inst.uid);
+      trapsOf(p).push({ uid: inst.uid, cardId: inst.cardId, at });
+      events.push({ type: 'tucked', player: pid, total: p.traps.length });
+      log(st, pid, `${p.name} hides a card face-down beside the river.`);
       break;
     }
     case 'attack': {
@@ -701,6 +847,7 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
       const target: AttackTarget = action.target.kind === 'city' ? { kind: 'city' } : { kind: 'building', uid: action.target.uid };
       st.phase = 'response';
       st.pending = { kind: 'attack', attacker: pid, unitUids: uids, target };
+      (st.struck ??= []).push(target.kind === 'city' ? 'city' : target.uid);
       events.push({ type: 'attackDeclared', player: pid, unitUids: uids, target });
       const tName = target.kind === 'city' ? 'the city' : getCard(opp.buildings.find((b) => b.uid === (target as { uid: string }).uid)!.cardId).name;
       log(st, pid, `${p.name} sends ${uids.length} unit${uids.length > 1 ? 's' : ''} across the river at ${tName}.`);

@@ -49,8 +49,12 @@ genuinely improve as your civilization grows.
    Progress from growth buildings, pay army upkeep strongest-first. Units you
    cannot pay desert.
 2. **Pick**: refill to 6 (see above).
-3. **Main**: play cards (pay Prosperity), send ready units across the river,
-   invoke your Signature (3 Momentum, once per turn), end the turn.
+3. **Main**: play cards (pay Prosperity), hide cards as traps, send ready
+   units across the river, invoke your Signature (3 Momentum, once per turn),
+   end the turn.
+
+Unsprung traps return to their decks at the very start of your turn, before
+upkeep.
 
 The second player starts with +1 Prosperity and +1 Momentum.
 
@@ -102,6 +106,34 @@ Units that attacked are exhausted and cannot block on the rival’s next turn.
 | Vigilant Watch | Hostile tactic | Cancel it |
 | Mirror the Scheme | Hostile tactic | Cancel it and turn it on its caster |
 
+### Hidden traps (v0.5)
+
+Any card in hand can be hidden face-down under one of your buildings or your
+city, free, up to 3 per spot. The rival sees the total count, never the cards
+or where they are (enforced by `viewFor`; events and log say nothing).
+
+If the rival attacks that spot, or aims a Hostile tactic at it (a scheme
+with no target counts as aiming at the city), before your next turn, every
+card there springs and is spent. A reaction played from hand that cancels
+the attack (Retreat, Treaty) comes first, and the traps then stay hidden.
+What a sprung card does depends on its kind:
+
+| Card kind | Springs as | Against an attack | Against a scheme |
+|---|---|---|---|
+| Unit | Garrison | Fights as an extra blocker for that one fight, then leaves | Catches the agents: foiled |
+| Reaction | Itself, free | Its normal effect (stacks with one from hand) | Watch/Ambush foil; Mirror reflects |
+| Fort | Wall | Soaks its Integrity in damage for that fight | Soaks damage |
+| Tactic | Snare | 1 damage to every attacker before the clash | Catches the agents: foiled |
+| Civilization card | Brace | Soaks Age + 1 damage | Soaks Age + 1 damage |
+
+Unsprung traps return to their decks at the start of your next turn, so
+hiding a card also cycles it out of your hand. The spot also gives +1
+Momentum when its traps spring. This gives every card a second use and turns
+target choice into a guessing game. **Probing** follows from the rules:
+attack a spot with one cheap unit to spend its traps, then send the army.
+The AI tucks the cards it cannot use soon, spreads them over likely targets,
+never sees the rival's placement, and probes before committing its army.
+
 ## 9. Civilizations
 
 | | Identity | Trait (always on) | Signature (3 Momentum) |
@@ -148,4 +180,4 @@ Sumer’s scribes. AI-vs-AI is a proxy; human play will find other lines.
 No infinite loops (effects are finite, response windows cannot nest, AI turns
 are capped, hard turn limit). Hidden information: both draw piles and the
 opponent’s hand are never sent to a client; the scribes’ peek is visible only
-to its owner. Caps: Prosperity 20, Momentum 5, hand 9, 8 buildings, 6 units.
+to its owner; hidden traps show only their count. Caps: Prosperity 20, Momentum 5, hand 9, 8 buildings, 6 units.

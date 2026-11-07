@@ -38,6 +38,7 @@ const P: Record<string, ReactElement> = {
   info: <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 11v6M12 7h.01" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   city: <path d="M3 21h18M5 21V10l4-3 4 3v11M13 21V6l3-3 3 3v15M8 14h2M16 10h0" />,
+  trap: <path d="M5 20h14M7 20l1.5-9h7L17 20M9 11l3-7 3 7M12 15v2" />,
   wifi: <path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01" />,
 };
 

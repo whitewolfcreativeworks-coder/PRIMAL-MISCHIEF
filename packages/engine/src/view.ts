@@ -18,7 +18,11 @@ export function viewFor(state: GameState, viewer: PlayerId | null): GameState {
     p.piles = { civ: hide(p.piles.civ, `pc${p.id}-`), mil: hide(p.piles.mil, `pm${p.id}-`) };
     const canSee = viewer === p.id || (viewer !== null && p.handRevealedTo);
     if (!canSee) p.hand = hide(p.hand, `h${p.id}-`);
-    if (viewer !== p.id) p.peek = null;
+    if (viewer !== p.id) {
+      p.peek = null;
+      // Hidden traps: the rival learns how many, never which cards or where.
+      p.traps = (p.traps ?? []).map((_, i) => ({ uid: `x${p.id}-${i}`, cardId: HIDDEN_CARD, at: HIDDEN_CARD }));
+    }
   }
   return v;
 }

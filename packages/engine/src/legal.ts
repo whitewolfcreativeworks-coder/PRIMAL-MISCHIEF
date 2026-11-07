@@ -1,5 +1,6 @@
 import { getCard, getCiv } from './data';
-import { ACTION_REACTIONS, ATTACK_REACTIONS, canPlayCard, other } from './engine';
+import { ACTION_REACTIONS, ATTACK_REACTIONS, braceOf, canPlayCard, other, requireMainPhase, SNARE_DAMAGE, trapRole, trapsOf, trapWallOf } from './engine';
+import { RULES } from './data';
 import type { Action, CardDef, GameState, PlayerId } from './types';
 
 /** All targets a card could legally take (undefined entry = no target needed). */
@@ -45,4 +46,23 @@ export function playableReactions(st: GameState, pid: PlayerId): string[] {
 export function availableBlockers(st: GameState, pid: PlayerId): string[] {
   if (st.phase !== 'response' || st.pending?.kind !== 'attack') return [];
   return st.players[pid].units.filter((u) => !u.blocked && !u.attacked).map((u) => u.uid);
+}
+
+/** What this card does if it springs from under a building. */
+export function trapText(card: CardDef): string {
+  switch (trapRole(card)) {
+    case 'garrison': return `Bursts out and fights as a defender for that one battle (${card.str ?? 1} Strength). Also catches schemers.`;
+    case 'reaction': return `${card.name} takes effect for free when the spot is hit.`;
+    case 'wall': return `Stands as a wall for that one fight, soaking ${trapWallOf(card)} damage.`;
+    case 'snare': return `A snare: ${SNARE_DAMAGE} damage to every attacker before the clash. Also catches schemers.`;
+    case 'brace': return `Braces the spot: soaks ${braceOf(card)} damage from that attack or scheme.`;
+  }
+}
+
+/** Spots where `pid` can hide a card right now ('city' and building uids with room). */
+export function tuckSpots(st: GameState, pid: PlayerId): string[] {
+  if (requireMainPhase(st, pid)) return [];
+  const p = st.players[pid];
+  const count = (at: string) => trapsOf(p).filter((t) => t.at === at).length;
+  return ['city', ...p.buildings.map((b) => b.uid)].filter((at) => count(at) < RULES.trapsPerSpot);
 }

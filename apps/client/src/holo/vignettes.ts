@@ -80,7 +80,14 @@ export interface BattleCtx { aCiv: CivId; dCiv: CivId; dAge: number; aAge: numbe
 
 export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx): Vignette {
   const aCol = col(attackerIsMe), dCol = col(!attackerIsMe);
-  const R = e.reaction;
+  // Every reaction in force (from the hand and from sprung traps); the cancelling one wins.
+  const RS = e.reactions ?? (e.reaction ? [e.reaction] : []);
+  const has = (r: string) => RS.includes(r as never);
+  const cancelR = e.cancelled ? (has('feignedRetreat') ? 'feignedRetreat' : has('treaty') ? 'treaty' : e.reaction) : null;
+  const R = cancelR ?? e.reaction;
+  const trap = e.trap ?? null;
+  const fromTrap = e.blockerFromTrap ?? e.blockerCards.map(() => false);
+  const trapNames = trap ? trap.cards.map((id) => getCard(id).name) : [];
   const fates = e.attackerFates ?? e.attackerCards.map((_, i) => (i < e.attackersLost ? 'melee' : null));
   const bFates = e.blockerFates ?? e.blockerCards.map((_, i) => i < e.blockersLost);
   const nA = e.attackerCards.length, nB = e.blockerCards.length;
@@ -89,11 +96,12 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
   const rName = R ? getCard(R === 'treaty' ? 'aksum_treaty' : R).name : '';
   const tgt = `${attackerIsMe ? 'their' : 'your'} ${e.target === 'city' ? 'city' : getCard(e.target).name}`;
   const fell = fates.filter(Boolean).length;
-  const caption = R === 'treaty' ? `${rName}: the attack is called off for tribute`
+  const trapLead = trap ? `Hidden trap${trap.cards.length > 1 ? 's' : ''}: ${trapNames.join(', ')}! ` : '';
+  const caption = trapLead + (R === 'treaty' ? `${rName}: the attack is called off for tribute`
     : e.cancelled ? `${rName}: the assault strikes empty ground${fell ? ` — ${plural(fell, 'unit')} lost` : ''}`
       : e.tideBack > 0 ? `${rName}! ${e.tideBack} damage crashes back on the attacker`
         : e.dealt > 0 ? `${nA === 1 ? getCard(e.attackerCards[0]).name : plural(nA, 'unit')} ${nA === 1 ? 'storms' : 'storm'} ${tgt}${R ? ` through ${rName}` : ''} — ${e.dealt} damage${e.targetDestroyed ? ', it falls' : ''}`
-          : `${tgt[0].toUpperCase()}${tgt.slice(1)} holds${R ? ` with ${rName}` : ''}`;
+          : `${tgt[0].toUpperCase()}${tgt.slice(1)} holds${R ? ` with ${rName}` : ''}`);
   const dur = e.cancelled ? 4.2 : 5.6;
 
   let T!: Troupe;
@@ -102,6 +110,9 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
   let B: { a: Actor[]; dies: boolean }[] = [];
   let ambushers: Actor[] = [], envoy: Actor | null = null;
   let glow: THREE.Mesh | null = null;
+  let dome: THREE.Mesh | null = null, trapWall: HoloModel | null = null;
+  let garrison: Actor[] = [];
+  const TRAP_T = 1.45; // the moment the trap springs: the attackers reach the far bank
 
   const reachWall = (e.wallAbsorbed > 0 || e.dealt > 0) && !!e.wallCard && e.wallCard !== e.target;
   const breach = e.dealt > 0;
@@ -127,13 +138,28 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
         fate: fates[i] ?? null, card: getCard(id),
       }));
       // Blockers hold the defender's bank.
-      B = e.blockerCards.map((id, i) => ({ a: T.squad(id, ctx.dCiv, dCol, [0.27, lane(i, nB, Math.min(0.5, 0.18 * nB))], BACK, { max: perB, spread: 0.06 * perB }), dies: !!bFates[i] }));
-      if (R === 'ambush') ambushers = [-1, 1].flatMap((side) => [0, 1].map((k) => T.person(ctx.dCiv, k ? 'archer' : 'infantry', dCol, [-0.25 + k * 0.08, side * 0.78], side > 0 ? -Math.PI / 2 : Math.PI / 2)));
+      B = e.blockerCards.map((id, i) => {
+        const z = lane(i, nB, Math.min(0.5, 0.18 * nB));
+        const a = T.squad(id, ctx.dCiv, dCol, [fromTrap[i] ? 0.7 : 0.27, z], BACK, { max: perB, spread: 0.06 * perB });
+        // Trap garrison: hidden inside the target, then bursts out to the riverbank.
+        if (fromTrap[i]) { a.forEach((x) => x.do(TRAP_T, 'charge', { to: [0.27 + (x.x - 0.7), x.z], dur: 0.5 }).do(TRAP_T + 0.55, 'idle')); garrison.push(...a); }
+        return { a, dies: !!bFates[i] };
+      });
+      if (trap) {
+        if (trap.roles.includes('brace')) {
+          dome = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+            new THREE.MeshBasicMaterial({ color: dCol, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, wireframe: true }));
+          dome.position.copy(target.group.position); s.root.add(dome);
+        }
+        const fortIdx = trap.roles.indexOf('wall');
+        if (fortIdx >= 0) { trapWall = building(s, trap.cards[fortIdx], ctx.dCiv, dCol, [0.46, 0, 0.18], 0.24); trapWall.group.rotation.y = Math.PI / 2; }
+      }
+      if (has('ambush')) ambushers = [-1, 1].flatMap((side) => [0, 1].map((k) => T.person(ctx.dCiv, k ? 'archer' : 'infantry', dCol, [-0.25 + k * 0.08, side * 0.78], side > 0 ? -Math.PI / 2 : Math.PI / 2)));
       if (R === 'treaty') envoy = T.person(ctx.dCiv, 'envoy', dCol, [0.45, 0], BACK);
-      if (R === 'shieldWall' || R === 'turnTheTide') {
-        glow = new THREE.Mesh(R === 'shieldWall' ? new THREE.PlaneGeometry(0.9, 0.42) : new THREE.TorusGeometry(0.45, 0.05, 8, 32, Math.PI),
+      if (has('shieldWall') || has('turnTheTide')) {
+        glow = new THREE.Mesh(has('shieldWall') ? new THREE.PlaneGeometry(0.9, 0.42) : new THREE.TorusGeometry(0.45, 0.05, 8, 32, Math.PI),
           new THREE.MeshBasicMaterial({ color: dCol, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
-        glow.position.set(R === 'shieldWall' ? 0.17 : 0.3, R === 'shieldWall' ? 0.2 : 0, 0); glow.rotation.y = Math.PI / 2;
+        glow.position.set(has('shieldWall') ? 0.17 : 0.3, has('shieldWall') ? 0.2 : 0, 0); glow.rotation.y = Math.PI / 2;
         s.root.add(glow);
       }
 
@@ -173,8 +199,14 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
         all.forEach((a, i) => T.missile('arrow', dCol, new THREE.Vector3(src.x, 0.35, src.z + (i % 3 - 1) * 0.1), a.chest(0.15).setX(-0.1), 1.25 + (i % 4) * 0.07, 0.5));
         A.forEach((g) => { if (g.fate === 'tower') g.a.forEach((a, k) => { dyingAt.set(a, 1.85 + k * 0.05); }); });
       }
+      // A sprung snare: stakes and arrows lash every attacker from the target.
+      if (trap && trap.snare > 0) {
+        const src = target.group.position;
+        all.forEach((a, i) => T.missile('javelin', dCol, new THREE.Vector3(src.x, 0.3, src.z + (i % 3 - 1) * 0.12), a.chest(0.12).setX(FAR_BANK - 0.05), TRAP_T + (i % 4) * 0.05, 0.4));
+        A.forEach((g) => { if (g.fate === 'trap') g.a.forEach((a, k) => { if (!dyingAt.has(a)) dyingAt.set(a, TRAP_T + 0.5 + k * 0.05); }); });
+      }
       // Ambush: warriors rise from the reeds on both flanks.
-      if (R === 'ambush') {
+      if (has('ambush')) {
         ambushers.forEach((m, i) => {
           m.do(0, 'kneel');
           if (m.figure?.outfit.weapon === 'bow') { m.do(1.2, 'shoot', { dur: 0.5 }); T.volley([m], all.slice(i % Math.max(1, all.length)), 1.2, 'arrow', dCol); }
@@ -204,7 +236,7 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
       const clash = 2.1;
       if (blockers.length) {
         melee.forEach((a) => repeat(a, castFor(A.find((g) => g.a.includes(a))!.card.id, ctx.aCiv).attack === 'push' ? 'push' : (a.vehicle ? 'thrust' : (a.figure?.outfit.weapon === 'spear' || a.figure?.outfit.weapon === 'javelin' ? 'thrust' : 'swing')), clash, 3.0, 0.45));
-        blockers.forEach((b) => { if (!isRanged(b)) { b.do(1.4, R === 'shieldWall' ? 'block' : 'brace'); repeat(b, R === 'shieldWall' ? 'block' : (b.figure?.outfit.weapon === 'spear' ? 'thrust' : 'swing'), clash + 0.15, 3.0, 0.5); } });
+        blockers.forEach((b) => { if (!isRanged(b)) { b.do(1.4, has('shieldWall') ? 'block' : 'brace'); repeat(b, has('shieldWall') ? 'block' : (b.figure?.outfit.weapon === 'spear' ? 'thrust' : 'swing'), clash + 0.15, 3.0, 0.5); } });
         A.forEach((g) => { if (g.fate === 'melee') g.a.forEach((a, k) => { if (!dyingAt.has(a)) dyingAt.set(a, 2.7 + k * 0.07); }); });
         B.forEach((g) => { if (g.dies) g.a.forEach((b, k) => dyingAt.set(b, 2.8 + k * 0.07)); });
       } else {
@@ -213,7 +245,7 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
 
       // Turn the Tide: the surviving defenders surge back across the river.
       const survivorsA = A.filter((g) => !g.fate).flatMap((g) => g.a);
-      if (R === 'turnTheTide') {
+      if (has('turnTheTide')) {
         B.filter((g) => !g.dies).flatMap((g) => g.a).forEach((b) => b.do(3.0, 'charge', { to: [-0.3, b.z], dur: 0.7, face: BACK }).do(3.75, 'cheer'));
         survivorsA.forEach((a) => a.do(3.05, 'flee', { to: [-1.05, a.z], dur: 0.9, face: BACK }));
       } else if (reachWall || breach) {
@@ -238,6 +270,14 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
     },
     update(s, t) {
       T.reveal(seg(t, 0, 0.6));
+      garrison.forEach((a) => a.reveal(seg(t, TRAP_T - 0.05, TRAP_T + 0.25)));
+      if (trap && t > TRAP_T) s.once('trap', () => {
+        s.burst(target.group.position.clone().setY(0.2), VIOLET, 90, { speed: 0.9, gravity: 0.5 });
+        s.label('Hidden trap!', [target.group.position.x - 0.1, 0.62, 0], '#e2d4ff', 1.5, 0.36);
+      });
+      if (dome) { (dome.material as THREE.MeshBasicMaterial).opacity = 0.35 * seg(t, TRAP_T, TRAP_T + 0.3) * (1 - seg(t, dur - 1.2, dur - 0.6)); dome.rotation.y = t * 0.4; }
+      if (trapWall) { s.reveal(trapWall, seg(t, TRAP_T, TRAP_T + 0.5, false)); }
+      if (trap && trap.absorbed > 0 && t > 3.7) s.once('braced', () => s.label(`Trap soaks ${trap.absorbed}`, [0.5, 0.6, 0.3], '#e2d4ff', 1.3, 0.26));
       s.reveal(target, seg(t, 0, 0.6));
       if (wall) s.reveal(wall, seg(t, 0, 0.6));
       if (home) s.reveal(home, seg(t, 0, 0.6));
@@ -262,14 +302,14 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
       else if (breach || reachWall) s.frame(0.4, 0, 1.15);
       else s.frame(-0.1, 0, 1.15);
 
-      if (R === 'ambush' && t > 1.2) s.once('ambush', () => s.label('Ambush!', [-0.2, 0.8, 0], '#d9c6ff'));
+      if (has('ambush') && t > 1.2) s.once('ambush', () => s.label('Ambush!', [-0.2, 0.8, 0], '#d9c6ff'));
       if (glow) {
         const m = glow.material as THREE.MeshBasicMaterial;
-        if (R === 'shieldWall') m.opacity = 0.3 * seg(t, 1.6, 2.0) * (1 - seg(t, 3.0, 3.4));
+        if (has('shieldWall')) m.opacity = 0.3 * seg(t, 1.6, 2.0) * (1 - seg(t, 3.0, 3.4));
         else { const w = seg(t, 2.9, 3.8, false); m.opacity = 0.6 * Math.sin(Math.PI * w); glow.position.x = 0.3 - 1.3 * w; glow.scale.setScalar(0.8 + w * 0.6); }
       }
       if (t > 2.1) s.once('clash', () => { if (B.length) s.burst([FAR_BANK - 0.02, 0.22, 0], WHITE, 50, { speed: 0.8 }); });
-      if (R === 'turnTheTide' && e.tideBack > 0 && home) {
+      if (has('turnTheTide') && e.tideBack > 0 && home) {
         if (t > 3.6) s.once('tide', () => { s.burst(home!.group.position.clone().setY(0.25), RED, 70, { speed: 0.8 }); s.label(`−${e.tideBack} Stability`, [-1.0, 0.8, 0.55], '#d9c6ff', 1.4); });
         shake(home, t > 3.6 && t < 4.1 ? 1 : 0, t, Math.PI / 2);
       }
@@ -283,7 +323,7 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
         if (e.progressRaided > 0 && t > hitAt + 0.5) s.once('raid', () => s.label(`−${e.progressRaided} Progress raided`, [0.3, 0.95, 0], '#ffd2a8', 1.3, 0.26));
         if (e.targetDestroyed) { if (t > hitAt) s.shatter(target, seg(t, hitAt, hitAt + 1.0, false)); }
         else shake(target, t > hitAt && t < hitAt + 0.5 ? 1 : 0, t, -Math.PI / 2);
-      } else if (!reachWall && R !== 'turnTheTide' && t > 3.2) s.once('held', () => s.label('Held!', [0.4, 0.8, 0], attackerIsMe ? '#ffd2a8' : '#aef6ff'));
+      } else if (!reachWall && !has('turnTheTide') && t > 3.2) s.once('held', () => s.label('Held!', [0.4, 0.8, 0], attackerIsMe ? '#ffd2a8' : '#aef6ff'));
       s.fadeAll(seg(t, dur - 0.4, dur));
     },
   };
@@ -311,7 +351,10 @@ export function schemeScene(e: SchemeEv, casterIsMe: boolean, ctx: SchemeCtx): V
   const card = getCard(e.cardId);
   const kind = schemeKindOf(card);
   const cCol = col(casterIsMe), vCol = col(!casterIsMe);
-  const caption = e.outcome === 'foiled' ? `${card.name} is caught and foiled`
+  const trap = e.trap ?? null;
+  const caption = trap && e.outcome === 'foiled' ? `A hidden trap catches the ${card.name} — foiled`
+    : trap && e.outcome === 'mirrored' ? `A hidden Mirror! ${card.name} turns on its caster`
+    : e.outcome === 'foiled' ? `${card.name} is caught and foiled`
     : e.outcome === 'mirrored' ? `Mirror the Scheme! ${card.name} turns on its caster`
       : kind === 'arrows' ? `${card.name}${ctx.victimUnitsLost.length ? ` — ${plural(ctx.victimUnitsLost.length, 'unit')} fall` : ''}`
         : `${card.name}${e.targetCardId ? ` strikes ${name(e.targetCardId)}` : ''}`;
@@ -387,7 +430,10 @@ export function schemeScene(e: SchemeEv, casterIsMe: boolean, ctx: SchemeCtx): V
       const strikeAt = 1.7;
       if (e.outcome === 'foiled') {
         // The watch spots them: torches flare, the intruders run.
-        const watch = [0, 1].map((i) => T.person(ctx.victimCiv, 'sentry', vCol, [0.52, (i - 0.5) * 0.3], BACK, { weapon: i ? 'torch' : 'spear' }));
+        // A hidden trap: defenders burst out of the building itself. Otherwise the watch spots them.
+        const watch = trap
+          ? trap.cards.slice(0, 3).map((id, i) => T.person(ctx.victimCiv, getCard(id).kind === 'unit' ? 'infantry' : 'sentry', vCol, [0.68, (i - 1) * 0.16], BACK))
+          : [0, 1].map((i) => T.person(ctx.victimCiv, 'sentry', vCol, [0.52, (i - 0.5) * 0.3], BACK, { weapon: i ? 'torch' : 'spear' }));
         watch.forEach((w) => w.do(1.3, 'point', { dur: 0.4 }).do(1.7, 'charge', { to: [FAR_BANK + 0.12, w.z], dur: 0.5 }).do(2.3, 'command'));
         agents.forEach((a) => { if (a.vehicle) { a.do(1.75, 'march', { to: [-0.8, a.z], dur: 1.2, face: BACK }); return; } a.beats = a.beats.filter((b) => b.at < 1.6); a.do(1.6, 'cower', { dur: 0.3 }); goHome(a, 1.9); });
         return;
@@ -420,6 +466,8 @@ export function schemeScene(e: SchemeEv, casterIsMe: boolean, ctx: SchemeCtx): V
       T.update(t);
       if (kind === 'steal') agents.forEach((a) => { if (a.figure) a.figure.load = t > 2.0 && e.outcome === 'hit'; });
       s.frame(t < 1.4 ? -0.1 : e.outcome === 'mirrored' && t > 2 ? -0.45 : 0.3, 0, t < 1.4 ? 1.0 : 1.12);
+      if (trap && t > 1.3) s.once('trapfx', () => { if (target) s.burst(target.group.position.clone().setY(0.2), VIOLET, 80, { speed: 0.8, gravity: 0.5 }); s.label('Hidden trap!', [0.5, 0.62, 0], '#e2d4ff', 1.4, 0.34); });
+      if (trap && e.outcome === 'hit' && trap.absorbed > 0 && t > 2.3) s.once('soak', () => s.label(`Trap soaks ${trap.absorbed}`, [0.5, 0.7, 0], '#e2d4ff', 1.3, 0.26));
       if (e.outcome === 'foiled' && t > 1.5) s.once('foil', () => s.label('Foiled', [0.3, 0.8, 0], '#d9c6ff'));
       if (e.outcome === 'mirrored' && t > 1.5) s.once('mirror', () => { s.burst([FAR_BANK + 0.1, 0.25, 0], VIOLET, 80, { speed: 1 }); s.label('Reversed!', [0.2, 0.85, 0], '#e2d4ff', 1.6); });
       const victimHit = e.outcome === 'hit' ? target : e.outcome === 'mirrored' ? back : null;
@@ -673,7 +721,7 @@ export function signatureScene(sig: string, mine: boolean, ctx: SignatureCtx): V
   const civ = ctx.civ;
   if (civ === 'kush') {
     // Rain of Arrows uses the same staging as Arrow Storm.
-    const v = schemeScene({ type: 'scheme', caster: 0, cardId: 'arrowStorm', targetCardId: null, outcome: 'hit', mirrorTargetCardId: null }, mine,
+    const v = schemeScene({ type: 'scheme', caster: 0, cardId: 'arrowStorm', targetCardId: null, outcome: 'hit', mirrorTargetCardId: null, trap: null }, mine,
       { casterCiv: civ, victimCiv: ctx.rivalCiv, victimAge: 1, casterAge: ctx.age, victimUnits: ctx.rivalUnits, victimUnitsLost: ctx.rivalUnitsLost, destroyed: { target: false, mirror: false } });
     return { ...v, caption: `${sig}${ctx.rivalUnitsLost.length ? ` — ${plural(ctx.rivalUnitsLost.length, 'unit')} fall` : ''}`, tone: 'reverse' };
   }
@@ -752,25 +800,25 @@ export function previewScene(cardId: string): Vignette {
     // The troop crosses the river against a token defence and wins through.
     const v = battleScene({
       type: 'combat', attacker: 0, power: c.str ?? 2, blocked: 1, wallAbsorbed: 0, dealt: 2, attackerCards: [cardId], blockerCards: ['militia'],
-      attackersLost: 0, blockersLost: 1, attackerFates: [null], blockerFates: [true], target: 'city', wallCard: null, reaction: null, cancelled: false, tideBack: 0, targetDestroyed: false, towerHits: 0, progressRaided: (c.keywords ?? []).includes('raider') ? 2 : 0,
+      attackersLost: 0, blockersLost: 1, attackerFates: [null], blockerFates: [true], target: 'city', wallCard: null, reaction: null, cancelled: false, tideBack: 0, targetDestroyed: false, towerHits: 0, progressRaided: (c.keywords ?? []).includes('raider') ? 2 : 0, trap: null, blockerFromTrap: [false], reactions: [],
     }, true, { aCiv: civ, dCiv: rival, dAge: 2, aAge: 2 });
     return { ...v, caption: c.name };
   }
   if (c.kind === 'reaction') {
     const r = c.reaction!;
     if (r === 'vigilantWatch' || r === 'mirror') {
-      return { ...schemeScene({ type: 'scheme', caster: 1, cardId: 'arson', targetCardId: 'temple', outcome: r === 'mirror' ? 'mirrored' : 'foiled', mirrorTargetCardId: 'market' }, false,
+      return { ...schemeScene({ type: 'scheme', caster: 1, cardId: 'arson', targetCardId: 'temple', outcome: r === 'mirror' ? 'mirrored' : 'foiled', mirrorTargetCardId: 'market', trap: null }, false,
         { casterCiv: rival, victimCiv: civ, victimAge: 2, casterAge: 2, victimUnits: [], victimUnitsLost: [], destroyed: { target: false, mirror: false } }), caption: c.name };
     }
     const cancelled = r === 'feignedRetreat' || r === 'treaty';
     return { ...battleScene({
       type: 'combat', attacker: 1, power: 4, blocked: 4, wallAbsorbed: 0, dealt: 0, attackerCards: ['spearmen', 'spearmen', 'militia'], blockerCards: ['archers', 'spearmen'],
       attackersLost: cancelled ? 0 : 2, blockersLost: 0, attackerFates: cancelled ? [null, null, null] : r === 'ambush' ? ['ambush', null, 'ambush'] : ['melee', null, 'melee'], blockerFates: [false, false],
-      target: 'city', wallCard: null, reaction: r, cancelled, tideBack: r === 'turnTheTide' ? 3 : 0, targetDestroyed: false, towerHits: 0, progressRaided: 0,
+      target: 'city', wallCard: null, reaction: r, reactions: [r], cancelled, tideBack: r === 'turnTheTide' ? 3 : 0, targetDestroyed: false, towerHits: 0, progressRaided: 0, trap: null, blockerFromTrap: [false, false],
     }, false, { aCiv: rival, dCiv: civ, dAge: 2, aAge: 2 }), caption: c.name };
   }
   if (c.hostile) {
-    return { ...schemeScene({ type: 'scheme', caster: 0, cardId, targetCardId: c.target === 'enemyBuilding' ? 'market' : null, outcome: 'hit', mirrorTargetCardId: null }, true,
+    return { ...schemeScene({ type: 'scheme', caster: 0, cardId, targetCardId: c.target === 'enemyBuilding' ? 'market' : null, outcome: 'hit', mirrorTargetCardId: null, trap: null }, true,
       { casterCiv: civ, victimCiv: rival, victimAge: 2, casterAge: 2, victimUnits: ['spearmen'], victimUnitsLost: ['archers', 'militia'], destroyed: { target: false, mirror: false } }), caption: c.name };
   }
   return { ...tacticScene(cardId, true, civ), caption: c.name };

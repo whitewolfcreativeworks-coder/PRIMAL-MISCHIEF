@@ -136,6 +136,23 @@ export interface UnitInst {
   buff: number;
 }
 
+/**
+ * A card tucked face-down under one of your buildings (or your city) as a
+ * hidden trap. It guards through the rival's next turn: if that spot is
+ * attacked or targeted, every card under it springs and is spent; if not,
+ * the cards shuffle back into their decks at the start of your turn.
+ * The rival sees how many you tucked, never which cards or where.
+ */
+export interface TrapInst {
+  uid: string;
+  cardId: string;
+  /** A building uid, or 'city'. */
+  at: string;
+}
+
+/** What a sprung trap card does, from its kind. */
+export type TrapRole = 'garrison' | 'reaction' | 'wall' | 'snare' | 'brace';
+
 export interface PlayerState {
   id: PlayerId;
   name: string;
@@ -154,6 +171,8 @@ export interface PlayerState {
   handRevealedTo: boolean;
   /** Sumer's scribes: top card of each pile, visible to the owner while drafting. */
   peek: Record<Family, string | null> | null;
+  /** Hidden traps (owner sees all; the rival sees only how many). */
+  traps: TrapInst[];
 }
 
 export type AttackTarget = { kind: 'city' } | { kind: 'building'; uid: string };
@@ -189,6 +208,8 @@ export interface GameState {
   winReason: string | null;
   uidCounter: number;
   log: LogEntry[];
+  /** Spots ('city' or building uid) the active player has already attacked or targeted this turn (public). */
+  struck: string[];
 }
 
 export interface LogEntry {
@@ -205,11 +226,22 @@ export type Action =
   | { type: 'attack'; unitUids: string[]; target: AttackTarget }
   | { type: 'signature'; targetUid?: string }
   | { type: 'respond'; reactionUid?: string; blockerUids: string[] }
+  | { type: 'tuck'; uid: string; at: string }
   | { type: 'endTurn' }
   | { type: 'concede' };
 
 /** How an attacking unit fell: tower arrows, an ambush, a feigned retreat, or the melee itself. */
-export type UnitFate = 'tower' | 'ambush' | 'retreat' | 'melee';
+export type UnitFate = 'tower' | 'ambush' | 'retreat' | 'trap' | 'melee';
+
+/** The trap cards that sprang in a fight or against a scheme, and what each did. */
+export interface TrapReport {
+  cards: string[];
+  roles: TrapRole[];
+  /** Total damage soaked by braces and trap walls. */
+  absorbed: number;
+  /** Damage dealt to each attacker by snares. */
+  snare: number;
+}
 
 /** Presentation events emitted by the engine so clients can animate what happened. */
 export type GameEvent =
@@ -239,8 +271,16 @@ export type GameEvent =
       blockerFates: boolean[];
       target: string; wallCard: string | null; reaction: ReactionKind | null; cancelled: boolean; tideBack: number;
       targetDestroyed: boolean; towerHits: number; progressRaided: number;
+      /** Hidden traps that sprang at the target (null = none). Garrison troops are listed in blockerCards with blockerFromTrap. */
+      trap: TrapReport | null;
+      blockerFromTrap: boolean[];
+      /** Every reaction in force, from the hand and from traps (reaction is the first). */
+      reactions: ReactionKind[];
     }
-  | { type: 'scheme'; caster: PlayerId; cardId: string; targetCardId: string | null; outcome: 'hit' | 'foiled' | 'mirrored'; mirrorTargetCardId: string | null }
+  | { type: 'scheme'; caster: PlayerId; cardId: string; targetCardId: string | null; outcome: 'hit' | 'foiled' | 'mirrored'; mirrorTargetCardId: string | null; trap: TrapReport | null }
+  | { type: 'tucked'; player: PlayerId; total: number }
+  | { type: 'trapSprung'; player: PlayerId; at: string; cards: string[] }
+  | { type: 'trapsReturned'; player: PlayerId; n: number }
   | { type: 'tactic'; player: PlayerId; cardId: string } // non-hostile military card (buffs, draws)
   | { type: 'cityDamaged'; player: PlayerId; amount: number }
   | { type: 'resource'; player: PlayerId; res: Resource; delta: number }

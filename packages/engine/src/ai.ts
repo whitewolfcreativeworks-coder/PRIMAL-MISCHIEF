@@ -1,7 +1,8 @@
 import { getCard, progressNeeded, RULES } from './data';
-import { actingPlayer, applyAction, draftNeeded, incomeOf, maxIntegrity, other, unitMaxHp, unitStr, workingBuildings } from './engine';
+import { actingPlayer, applyAction, costOf, draftNeeded, incomeOf, maxIntegrity, other, unitMaxHp, unitStr, workingBuildings } from './engine';
 import { availableBlockers, listPlays, playableReactions, readyAttackers } from './legal';
 import type { Action, Age, CivId, GameState, PlayerId, PlayerState } from './types';
+import { HIDDEN_CARD } from './view';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -197,11 +198,83 @@ export function chooseResponse(st: GameState, me: PlayerId, diff: Difficulty = '
   return best;
 }
 
-export function chooseAction(st: GameState, me: PlayerId, diff: Difficulty = 'normal'): Action {
-  if (actingPlayer(st) !== me) throw new Error('AI asked to act out of turn.');
+// ------------------------------------------------------------------ hidden traps
+
+/** The AI never sees where the rival hid traps or what they are: it only knows how many. */
+export function maskTraps(st: GameState, me: PlayerId): GameState {
+  const opp = st.players[other(me)];
+  if (!(opp.traps ?? []).some((t) => t.cardId !== HIDDEN_CARD)) return st;
+  const v: GameState = JSON.parse(JSON.stringify(st));
+  v.players[other(me)].traps = opp.traps.map((_, i) => ({ uid: `x${i}`, cardId: HIDDEN_CARD, at: HIDDEN_CARD }));
+  return v;
+}
+
+/**
+ * Before ending its turn, the AI hides cards it cannot use soon under the
+ * spots the rival is most likely to hit, spreading them out (and bluffing a
+ * little) so a single probe cannot clear them all.
+ */
+export function chooseTuck(st: GameState, me: PlayerId, diff: Difficulty): Action | null {
+  const p = st.players[me], opp = st.players[other(me)];
+  if (diff === 'easy' && noise(st.turn * 37 + p.hand.length) < 0.6) return null;
+  const known = p.hand.filter((c) => c.cardId !== HIDDEN_CARD);
+  if (known.length <= 2) return null;
+  const nextBudget = p.prosperity + incomeOf(p).net;
+  // Keep the cards worth holding: reactions (one), and what it can afford next turn (best first).
+  const ranked = known.map((c) => {
+    const card = getCard(c.cardId);
+    let keep = card.age * 1.5 + card.cost;
+    if (card.age < p.age - 1) keep -= 20; // retired: pure junk
+    if (costOf(p, card) > nextBudget) keep -= 8; // cannot pay for it soon
+    if (card.kind === 'reaction') keep += 6;
+    return { c, card, keep };
+  }).sort((a, b) => b.keep - a.keep);
+  const reactionsKept = ranked.slice(0, 3).filter((r) => r.card.kind === 'reaction').length;
+  const spare = ranked.slice(3).concat(reactionsKept > 1 ? ranked.slice(0, 3).filter((r) => r.card.kind === 'reaction').slice(1) : []);
+  const pick = spare.sort((a, b) => a.keep - b.keep)[0];
+  if (!pick) return null;
+  const traps = p.traps ?? [];
+  // Where will the rival strike? The city when they have an army, otherwise the most valuable buildings.
+  const w = workingBuildings(p);
+  const spots = [{ at: 'city', weight: opp.units.length ? 3 + armyPower(opp) * 0.3 : 1 }, ...p.buildings.map((b) => {
+    const c = getCard(b.cardId);
+    return { at: b.uid, weight: (w.has(b.uid) ? 1 + c.cost * 0.6 : 0.4) + (c.rarity === 'wonder' ? 2 : 0) };
+  })];
+  let best: { at: string; v: number } | null = null;
+  spots.forEach((sp, i) => {
+    const here = traps.filter((t) => t.at === sp.at).length;
+    if (here >= RULES.trapsPerSpot) return;
+    const v = sp.weight / (1 + here * 1.3) + (diff === 'hard' ? 0 : noise(st.turn * 53 + i) * 1.5);
+    if (!best || v > best.v) best = { at: sp.at, v };
+  });
+  return best ? { type: 'tuck', uid: pick.c.uid, at: (best as { at: string }).at } : null;
+}
+
+/** Before committing the army against a spot that may hide traps, send the cheapest unit in first. */
+function probeFirst(st: GameState, me: PlayerId, a: Action): Action {
+  if (a.type !== 'attack' || a.unitUids.length < 2) return a;
+  const opp = st.players[other(me)];
+  if (!(opp.traps ?? []).length) return a;
+  const spot = a.target.kind === 'city' ? 'city' : a.target.uid;
+  if ((st.struck ?? []).includes(spot)) return a; // already tested this turn
+  const p = st.players[me];
+  const cheapest = [...a.unitUids].sort((x, y) => {
+    const ux = p.units.find((u) => u.uid === x)!, uy = p.units.find((u) => u.uid === y)!;
+    return getCard(ux.cardId).cost + unitStr(p, ux) * 0.5 - (getCard(uy.cardId).cost + unitStr(p, uy) * 0.5);
+  })[0];
+  return { type: 'attack', unitUids: [cheapest], target: a.target };
+}
+
+export function chooseAction(full: GameState, me: PlayerId, diff: Difficulty = 'normal'): Action {
+  if (actingPlayer(full) !== me) throw new Error('AI asked to act out of turn.');
+  const st = maskTraps(full, me);
   if (st.phase === 'draft') return chooseDraft(st, me, diff);
   if (st.phase === 'response') return chooseResponse(st, me, diff);
-  if (diff !== 'hard') return greedy(st, me, diff).action;
+  const finish = (a: Action): Action => {
+    if (a.type === 'endTurn') return chooseTuck(st, me, diff) ?? a;
+    return diff === 'easy' ? a : probeFirst(st, me, a);
+  };
+  if (diff !== 'hard') return finish(greedy(st, me, diff).action);
 
   const base = rollout(st, me, 0) + 0.25;
   const scored: { a: Action; v: number }[] = [];
@@ -218,7 +291,7 @@ export function chooseAction(st: GameState, me: PlayerId, diff: Difficulty = 'no
     const v = rollout(s, me, 6);
     if (v > bestV) { bestV = v; bestA = a; }
   }
-  return bestA;
+  return finish(bestA);
 }
 
-export const AI_ACTIONS_PER_TURN = RULES.maxBuildings + RULES.maxUnits + 14;
+export const AI_ACTIONS_PER_TURN = RULES.maxBuildings + RULES.maxUnits + 14 + RULES.handLimit;

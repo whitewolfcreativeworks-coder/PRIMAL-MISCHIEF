@@ -15,6 +15,7 @@ export const RULES = {
   maxBuildings: 8, // buildings and forts on your bank
   maxUnits: 6,
   turnLimit: 80, // player-turns before the match is decided on points
+  trapsPerSpot: 3, // hidden cards under one building or the city
 } as const;
 
 export const ALL_CARDS: CardDef[] = [...SHARED_CIV, ...SHARED_MIL, ...CIV_CARDS];

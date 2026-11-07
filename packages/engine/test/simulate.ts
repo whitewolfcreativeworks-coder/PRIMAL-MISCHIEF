@@ -19,7 +19,7 @@ if (isMain) {
   const wins: Record<string, number> = {}, games: Record<string, number> = {};
   const reasons: Record<string, number> = {};
   const ages: number[] = [];
-  let firstWins = 0, total = 0, turns = 0, milShare = 0, drafts = 0;
+  let firstWins = 0, total = 0, turns = 0, milShare = 0, drafts = 0, tucked = 0, sprungAt = 0, probes = 0;
   const t0 = Date.now();
   for (const x of CIVS) for (const y of CIVS) {
     if (x.id === y.id) continue;
@@ -33,10 +33,12 @@ if (isMain) {
       reasons[r] = (reasons[r] ?? 0) + 1;
       if (w === (i % 2)) firstWins++;
       ages.push(st.players[0].age, st.players[1].age);
+      for (const l of st.log) { if (/hides a card/.test(l.text)) tucked++; if (/Hidden traps spring/.test(l.text)) sprungAt++; if (/sends 1 unit across/.test(l.text)) probes++; }
       for (const l of st.log) { const m = l.text.match(/picks (\d+) Civilization and (\d+) Military/); if (m) { drafts++; milShare += +m[2] / Math.max(1, +m[1] + +m[2]); } }
     }
   }
   console.log(`games=${total} avgPlayerTurns=${(turns / total).toFixed(1)} firstPlayerWin=${(100 * firstWins / total).toFixed(0)}% militaryPickShare=${(100 * milShare / drafts).toFixed(0)}% avgFinalAge=${(ages.reduce((a, b) => a + b, 0) / ages.length).toFixed(2)} time=${Date.now() - t0}ms`);
+  console.log(`traps: tucked/game=${(tucked / total).toFixed(1)} springs/game=${(sprungAt / total).toFixed(1)} single-unit attacks/game=${(probes / total).toFixed(1)}`);
   for (const c of CIVS) console.log(c.id.padEnd(9), `${(100 * (wins[c.id] ?? 0) / games[c.id]).toFixed(0)}%`);
   console.log(reasons);
 }

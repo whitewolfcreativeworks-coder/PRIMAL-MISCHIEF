@@ -18,7 +18,8 @@ function combat(over: Partial<Combat> & { attackerCards: string[] }): Combat {
   return {
     type: 'combat', attacker: 0, power: 4, blocked: 0, wallAbsorbed: 0, dealt: 0, blockerCards: [], attackersLost: fates.filter(Boolean).length, blockersLost: bf.filter(Boolean).length,
     target: 'city', wallCard: null, reaction: null, cancelled: false, tideBack: 0, targetDestroyed: false, towerHits: 0, progressRaided: 0,
-    ...over, attackerFates: fates, blockerFates: bf,
+    trap: null, reactions: over.reaction ? [over.reaction] : [],
+    ...over, attackerFates: fates, blockerFates: bf, blockerFromTrap: over.blockerFromTrap ?? (over.blockerCards ?? []).map(() => false),
   };
 }
 
@@ -37,6 +38,13 @@ export function galleryScenes(civ: CivId, rival: CivId): GalleryItem[] {
   add('Battles', 'Walls breached, building falls', () => battleScene(combat({ attackerCards: [units.find((u) => (getCard(u).keywords ?? []).includes('siege')) ?? 'ram', weak[0]], target: 'temple', wallCard: 'walls', wallAbsorbed: 2, dealt: 3, targetDestroyed: true }), true, ctx));
   add('Battles', 'Towers thin the crossing', () => battleScene(combat({ attackerCards: weak, towerHits: 1, wallCard: 'watchtower', attackerFates: ['tower', null], dealt: 1 }), true, ctx));
   add('Battles', 'Raiders carry off Progress', () => battleScene(combat({ attackerCards: ['raiders', 'raiders'], dealt: 2, progressRaided: 4 }), true, ctx));
+  // Hidden traps springing.
+  add('Traps', 'Garrison bursts out', () => battleScene(combat({ attackerCards: strong, blockerCards: ['spearmen', 'militia'], blockerFromTrap: [false, true], blockerFates: [false, true], attackerFates: ['melee', null], trap: { cards: ['militia'], roles: ['garrison'], absorbed: 0, snare: 0 } }), true, ctx));
+  add('Traps', 'Snare and brace', () => battleScene(combat({ attackerCards: weak, attackerFates: ['trap', null], dealt: 1, trap: { cards: ['arson', 'farm'], roles: ['snare', 'brace'], absorbed: 2, snare: 1 } }), true, ctx));
+  add('Traps', 'A fort springs up', () => battleScene(combat({ attackerCards: strong, target: 'market', trap: { cards: ['palisade'], roles: ['wall'], absorbed: 3, snare: 0 } }), true, ctx));
+  add('Traps', 'Hidden Ambush', () => battleScene(combat({ attacker: 1, attackerCards: ['spearmen', 'militia'], reaction: 'ambush', attackerFates: ['ambush', 'ambush'], trap: { cards: ['ambush'], roles: ['reaction'], absorbed: 0, snare: 0 } }), false, rctx));
+  add('Traps', 'Arson caught by a trap', () => schemeScene({ type: 'scheme', caster: 0, cardId: 'arson', targetCardId: 'market', outcome: 'foiled', mirrorTargetCardId: null, trap: { cards: ['spearmen'], roles: ['garrison'], absorbed: 0, snare: 0 } }, true,
+    { casterCiv: civ, victimCiv: rival, casterAge: 3, victimAge: 3, victimUnits: [], victimUnitsLost: [], destroyed: { target: false, mirror: false } }));
   const R: ReactionKind[] = ['shieldWall', 'ambush', 'feignedRetreat', 'turnTheTide', 'treaty'];
   for (const r of R) {
     const cancelled = r === 'feignedRetreat' || r === 'treaty';
@@ -53,7 +61,7 @@ export function galleryScenes(civ: CivId, rival: CivId): GalleryItem[] {
   for (const id of hostile) {
     for (const outcome of ['hit', 'foiled', 'mirrored'] as const) {
       const c = getCard(id);
-      add('Schemes', `${c.name} · ${outcome}`, () => schemeScene({ type: 'scheme', caster: 0, cardId: id, targetCardId: c.target === 'enemyBuilding' ? 'market' : null, outcome, mirrorTargetCardId: outcome === 'mirrored' ? 'granary' : null }, true,
+      add('Schemes', `${c.name} · ${outcome}`, () => schemeScene({ type: 'scheme', caster: 0, cardId: id, targetCardId: c.target === 'enemyBuilding' ? 'market' : null, outcome, mirrorTargetCardId: outcome === 'mirrored' ? 'granary' : null, trap: null }, true,
         { casterCiv: civ, victimCiv: rival, casterAge: 3, victimAge: 3, victimUnits: ['spearmen'], victimUnitsLost: ['archers', 'militia'], destroyed: { target: outcome === 'hit' && c.target === 'enemyBuilding', mirror: false } }));
     }
   }

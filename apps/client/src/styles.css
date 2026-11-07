@@ -682,3 +682,15 @@ input, select { font: inherit; }
 .gallery-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .gallery-list .btn { min-height: 44px; }
 @media (max-width: 700px) { .gallery-civs > span { min-width: 100%; } .civ-chip b { display: none; } .civ-chip { padding: 4px; } }
+
+/* ---------------------------------------------------------------- hidden traps */
+.btn.trap-btn { background: linear-gradient(180deg, #4a3a78, #2c2250); border-color: var(--violet); color: #efe7ff; }
+.trap-offer { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px dashed rgba(180, 154, 230, .45); background: rgba(80, 60, 140, .14); }
+.trap-offer p { margin: 0; font-size: .92em; line-height: 1.45; color: #ddd3f5; }
+.bld-traps { position: absolute; left: 6px; top: 6px; display: flex; gap: 0; pointer-events: none; }
+.bld-traps i { width: 14px; height: 19px; margin-right: -6px; border-radius: 3px; border: 1px solid #cdb8ff;
+  background: repeating-linear-gradient(135deg, #3a2c66 0 3px, #4b3a82 3px 6px); box-shadow: 0 1px 4px rgba(0,0,0,.6); transform: rotate(-8deg); }
+.bld-traps i:nth-child(2) { transform: rotate(0deg); } .bld-traps i:nth-child(3) { transform: rotate(8deg); }
+.chip.traps { color: #d9c9ff; box-shadow: 0 0 0 1px rgba(180, 154, 230, .45); }
+.chip.traps em { font-style: normal; opacity: .75; margin-left: 2px; }
+.chip.traps.rival { animation: breathe 2.4s calc(1s * var(--pace)) infinite; }

@@ -277,6 +277,105 @@ describe('reactions and reversals', () => {
   });
 });
 
+describe('hidden traps', () => {
+  const trapAt = (st: GameState, pid: PlayerId, cardId: string, at: string) => { const uid = `t${n++}`.replace('t', 'k'); st.players[pid].traps.push({ uid, cardId, at }); return uid; };
+  it('tucks a card from hand under a building or the city, up to three per spot', () => {
+    let st = ready(fresh());
+    const farm = build(st, 0, 'farm');
+    const cards = [0, 1, 2, 3].map(() => give(st, 0, 'militia'));
+    for (const c of cards.slice(0, 3)) st = applyAction(st, 0, { type: 'tuck', uid: c, at: farm }).state;
+    expect(() => applyAction(st, 0, { type: 'tuck', uid: cards[3], at: farm })).toThrow(/At most 3/);
+    expect(() => applyAction(st, 0, { type: 'tuck', uid: cards[3], at: 'nowhere' })).toThrow(/buildings or your city/);
+    st = applyAction(st, 0, { type: 'tuck', uid: cards[3], at: 'city' }).state;
+    expect(st.players[0].traps.length).toBe(4);
+    expect(st.players[0].hand.some((c) => cards.includes(c.uid))).toBe(false);
+  });
+  it('the rival sees how many traps, never which or where — and the log does not tell', () => {
+    let st = ready(fresh());
+    const farm = build(st, 0, 'farm');
+    const r = applyAction(st, 0, { type: 'tuck', uid: give(st, 0, 'ambush'), at: farm });
+    st = r.state;
+    const v = viewFor(st, 1);
+    expect(v.players[0].traps).toEqual([{ uid: 'x0-0', cardId: HIDDEN_CARD, at: HIDDEN_CARD }]);
+    expect(viewFor(st, 0).players[0].traps[0].cardId).toBe('ambush');
+    expect(JSON.stringify(r.events)).not.toMatch(/ambush|farm/);
+    expect(st.log.at(-1)!.text).not.toMatch(/Ambush|Farm/);
+  });
+  it('a garrison bursts out and fights, then leaves; a snare hits every attacker; braces soak damage', () => {
+    const st = ready(fresh());
+    trapAt(st, 1, 'spearmen', 'city');
+    trapAt(st, 1, 'arson', 'city');
+    trapAt(st, 1, 'farm', 'city'); // Age I civ card: braces 2
+    const a1 = unit(st, 0, 'eliteGuard'), a2 = unit(st, 0, 'militia');
+    const r = attackAndResolve(st, [a1, a2], { kind: 'city' });
+    const c = r.events.find((e) => e.type === 'combat');
+    if (!c || c.type !== 'combat') throw new Error('no combat');
+    expect(r.events.some((e) => e.type === 'trapSprung')).toBe(true);
+    expect(c.trap!.roles.sort()).toEqual(['brace', 'garrison', 'snare']);
+    expect(c.trap!.snare).toBe(1);
+    expect(c.blockerCards).toEqual(['spearmen']);
+    expect(c.blockerFromTrap).toEqual([true]);
+    expect(r.state.players[1].traps.length).toBe(0);
+    expect(r.state.players[1].units.length).toBe(0); // the garrison left the field
+    // Militia (hp 2) dies to the snare + garrison; Elite Guard (4 str) kills the 3-str... whatever gets through is braced by 2
+    expect(c.attackerFates[1]).not.toBeNull();
+    expect(r.state.players[1].stability).toBe(22 - c.dealt);
+  });
+  it('trap reactions fire for free; a trap Feigned Retreat calls the attack off', () => {
+    const st = ready(fresh());
+    trapAt(st, 1, 'feignedRetreat', 'city');
+    st.players[1].prosperity = 0;
+    const r = attackAndResolve(st, [unit(st, 0, 'spearmen')], { kind: 'city' });
+    const c = r.events.find((e) => e.type === 'combat');
+    expect(c).toMatchObject({ cancelled: true, reaction: 'feignedRetreat' });
+    expect(r.state.players[1].stability).toBe(22);
+  });
+  it('traps only spring where the attack lands, and unsprung ones return to the decks', () => {
+    let st = ready(fresh());
+    const farm = build(st, 1, 'farm');
+    trapAt(st, 1, 'ambush', farm);
+    st = attackAndResolve(st, [unit(st, 0, 'spearmen')], { kind: 'city' }).state;
+    expect(st.players[1].traps.length).toBe(1);
+    const pile = st.players[1].piles.mil.length;
+    st = applyAction(st, 0, { type: 'endTurn' }).state; // player 1's turn: their own traps come home
+    expect(st.players[1].traps.length).toBe(0);
+    expect(st.players[1].piles.mil.length).toBe(pile + 1);
+  });
+  it('a probe sets off the traps so the main attack walks in clean', () => {
+    let st = ready(fresh());
+    const farm = build(st, 1, 'farm');
+    trapAt(st, 1, 'spearmen', farm); trapAt(st, 1, 'ambush', farm);
+    const probe = unit(st, 0, 'militia'), main = unit(st, 0, 'eliteGuard');
+    st = attackAndResolve(st, [probe], { kind: 'building', uid: farm }).state;
+    expect(st.players[1].traps.length).toBe(0);
+    expect(st.struck).toEqual([farm]);
+    const r = attackAndResolve(st, [main], { kind: 'building', uid: farm });
+    const c = r.events.find((e) => e.type === 'combat');
+    expect(c).toMatchObject({ trap: null, targetDestroyed: true });
+  });
+  it('traps catch schemes: soldiers foil Arson, a Mirror sends it home, a brace soaks it', () => {
+    const scheme = (trapCard: string) => {
+      const st = ready(fresh());
+      const temple = build(st, 1, 'temple');
+      build(st, 0, 'market');
+      trapAt(st, 1, trapCard, temple);
+      const s = applyAction(st, 0, { type: 'play', uid: give(st, 0, 'arson'), targetUid: temple }).state;
+      return applyAction(s, 1, { type: 'respond', blockerUids: [] });
+    };
+    expect(scheme('militia').events.find((e) => e.type === 'scheme')).toMatchObject({ outcome: 'foiled' });
+    expect(scheme('mirror').events.find((e) => e.type === 'scheme')).toMatchObject({ outcome: 'mirrored' });
+    const braced = scheme('palace'); // Age IV: braces 5 — Arson's 3 is fully soaked
+    expect(braced.events.find((e) => e.type === 'scheme')).toMatchObject({ outcome: 'hit', trap: { absorbed: 3 } });
+    expect(braced.state.players[1].buildings[0].damage).toBe(0);
+  });
+  it('the AI never peeks at hidden traps', () => {
+    const st = ready(fresh());
+    trapAt(st, 1, 'ambush', 'city');
+    const masked = viewFor(st, 0);
+    expect(masked.players[1].traps[0].cardId).toBe(HIDDEN_CARD);
+  });
+});
+
 describe('civilization traits', () => {
   it('Kush archers hit harder; Carthage deploys units cheaper; Aksum harbors trade', () => {
     const k = ready(fresh('kush', 'sumer'));

@@ -5,14 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { CIVS, type CivId, type Difficulty } from '../src/index';
 
 type Job = { a: CivId; b: CivId; i: number; diff: Difficulty };
-type Res = Job & { winner: CivId; reason: string; turns: number; firstWon: boolean };
+type Res = Job & { winner: CivId; reason: string; turns: number; firstWon: boolean; tucked: number; sprung: number };
 
 if (process.env.PM_WORKER) {
   const { playOut } = await import('./simulate');
   process.on('message', (jobs: Job[]) => {
     const out: Res[] = jobs.map((j) => {
       const st = playOut(1000 + j.i * 7919 + j.a.length * 31 + j.b.length, j.a, j.b, j.diff, (j.i % 2) as 0 | 1);
-      return { ...j, winner: st.players[st.winner!].civ, reason: (st.winReason ?? '').split(':')[0], turns: st.turn, firstWon: st.winner === (j.i % 2) };
+      return { ...j, winner: st.players[st.winner!].civ, reason: (st.winReason ?? '').split(':')[0], turns: st.turn, firstWon: st.winner === (j.i % 2), tucked: st.log.filter((l) => /hides a card/.test(l.text)).length, sprung: st.log.filter((l) => /Hidden traps spring/.test(l.text)).length };
     });
     process.send!(out);
     process.exit(0);
@@ -42,4 +42,5 @@ if (process.env.PM_WORKER) {
   console.log(`games=${results.length} avgPlayerTurns=${avg.toFixed(1)} firstPlayerWin=${(100 * results.filter((r) => r.firstWon).length / results.length).toFixed(0)}% time=${Date.now() - t0}ms`);
   for (const c of CIVS) console.log(c.id.padEnd(9), `${(100 * (wins[c.id] ?? 0) / games[c.id]).toFixed(0)}%`, CIVS.filter((o) => o.id !== c.id).map((o) => `${o.id.slice(0, 4)}:${Math.round(100 * ((vs[`${c.id}>${o.id}`] ?? 0) + (n - (vs[`${o.id}>${c.id}`] ?? 0))) / (2 * n))}`).join(' '));
   console.log(reasons);
+  console.log(`traps per game: tucked ${(results.reduce((s, r) => s + r.tucked, 0) / results.length).toFixed(1)}, sprang ${(results.reduce((s, r) => s + r.sprung, 0) / results.length).toFixed(1)}`);
 }
