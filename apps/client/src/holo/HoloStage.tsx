@@ -1,4 +1,4 @@
-import { getCard, getCiv, type GameEvent, type GameState, type PlayerId } from '@pm/engine';
+import { cityLedger, getCard, getCiv, type GameEvent, type GameState, type PlayerId } from '@pm/engine';
 import { useEffect, useRef, useState } from 'react';
 import { Theater, type Vignette } from './theater';
 import { ageUpScene, battleScene, collapseScene, deployScene, growScene, previewScene, schemeScene, signatureScene, tacticScene, victoryScene } from './vignettes';
@@ -56,7 +56,14 @@ export function scenesFor(events: GameEvent[], view: GameState, me: PlayerId, pa
         // Show the city at the Age it was when the card was played (an Age-up scene follows if it advanced).
         const ageAfter = events.slice(i + 1).find((x) => x.type === 'ageUp' && x.player === e.player);
         const age = ageAfter && ageAfter.type === 'ageUp' ? ageAfter.age - 1 : p.age;
-        if (full || wonder) out.push(growScene(e.cardId, p.civ, age, e.player === me, e.progress));
+        // How the new building stands in the city: hungry, idle, or completing a settlement.
+        const raised = [...events.slice(0, i)].reverse().find((x) => x.type === 'buildingRaised' && x.player === e.player && x.cardId === e.cardId);
+        let status: 'hungry' | 'idle' | 'settlement' | undefined;
+        if (raised && raised.type === 'buildingRaised') {
+          const L = cityLedger(p);
+          status = L.hungry.includes(raised.uid) ? 'hungry' : L.idle.includes(raised.uid) ? 'idle' : undefined;
+        }
+        if (full || wonder) out.push(growScene(e.cardId, p.civ, age, e.player === me, e.progress, status));
         break;
       }
       case 'ageUp': out.push(ageUpScene(P[e.player].civ, e.age, e.name, e.player === me)); break;

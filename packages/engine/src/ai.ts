@@ -37,7 +37,10 @@ function playerValue(p: PlayerState, oppPower: number): number {
   v += p.prosperity * 0.35 + p.momentum * 1.2;
   v += Math.min(p.hand.length, RULES.handSize) * 1.1;
   v += inc.net * 1.4 + inc.growth * 3.2;
-  if (inc.net < 0) v -= 5; // the army is about to desert
+  v -= inc.foodShort * 8; // hungry soldiers are about to desert: their cost is wasted
+  const L = inc.ledger;
+  v -= (L.hungry.length + L.idle.length) * 0.8; // buildings standing hungry or idle are wasted
+  v += Math.min(L.forArmy - L.armyEats, 4) * 0.3; // room to feed a bigger army
   for (const b of p.buildings) {
     const c = getCard(b.cardId);
     const health = (maxIntegrity(b) - b.damage) / maxIntegrity(b);
@@ -87,6 +90,10 @@ export function chooseDraft(st: GameState, me: PlayerId, diff: Difficulty = 'nor
   mil += Math.max(0, behind) * 0.08;
   mil += (civInHand - milInHand) * 0.25;
   if (p.prosperity + incomeOf(p).net < 3) mil -= 0.5; // cannot afford an army: grow first
+  // An army needs Food: with no room to feed more soldiers, grow the farms first.
+  const L = incomeOf(p).ledger;
+  const room = L.forArmy - L.armyEats;
+  if (room <= 0) mil -= 1.5; else if (room === 1) mil -= 0.5;
   // Sumer's scribes: lean toward whichever deck is showing a strong card on top.
   if (p.peek && diff !== 'easy') {
     const worth = (id: string | null) => (id ? getCard(id).cost + (getCard(id).age >= p.age ? 2 : 0) : 0);

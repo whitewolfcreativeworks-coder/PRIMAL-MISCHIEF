@@ -134,15 +134,38 @@ attack a spot with one cheap unit to spend its traps, then send the army.
 The AI tucks the cards it cannot use soon, spreads them over likely targets,
 never sees the rival's placement, and probes before committing its army.
 
+### Food, people and work (v0.6)
+
+`cityLedger(p)` in `engine.ts` is the single source for all of this (UI, AI and lessons read it):
+
+- **Food:** the land makes 1; Farms make 2 (Carthage's Great Estates 3, Sumer's Reed Houses 1, Carthage's Trading Post 1). Irrigation Canals: +1 per Farm. Three working Farms (Breadbasket): +1 per Farm.
+- **Who eats:** Villages (and Palaces, 2) eat first, in the order built; a Village with no Food is hungry and stands idle. Soldiers eat what is left (their `upkeep`, now in Food): strongest fed first, the rest desert. Prosperity no longer pays upkeep.
+- **Spare Food** fills granaries (Granary 2, Qullqa 4) and the rest sells for +1 Prosperity each.
+- **Workers:** 1 per Age from the city (+1 for Sumer's scribes), +1 per fed Village. Workplaces (`staff`: Quarry, Market, Workshop, Temple and the civ workplaces) need 1 each; the most expensive are staffed first; the rest stand idle.
+- **Bonuses:** each complete settlement (working Farm + fed Village + staffed workplace) +1 Progress a turn. Three of a kind: Breadbasket (Farms, +1 Food each), Crowded City (Villages, +1 Progress), Stone City (Quarries, +1 Prosperity each).
+
+### Roles and formations (v0.6)
+
+| Role | Beats (+2 Strength) | Units |
+|---|---|---|
+| Spear | Riders, Skirmishers | Spearmen, Elite Guard, Grand Army, Iron Spearmen, Highland Spearmen, Phalanx, Mercenaries, Hosts |
+| Rider | Archers, Shields | Numidian Horse, Battle Wagon, Elephants |
+| Archer | Spears, Siege, Raiders | Archers, Bowmen, Slingers, Host of the Kandake |
+| Shield | Archers | Militia, Shield Bearers |
+| Skirmisher (Inca) | Archers, Siege | Mountain Warriors, Mace Bearers |
+| Siege, Raider | — | Siege Ram (needs a Workshop), River Raiders, ships |
+
+A unit gets +2 if any unit on the other side has a role it beats. Three or more different roles in one attack: +2 power. Three or more of one role: archers volley (1 damage to every enemy unit in the fight before the clash), spears form a hedgehog (+1 each while blocking), riders charge (+1 each while attacking).
+
 ## 9. Civilizations
 
 | | Identity | Trait (always on) | Signature (3 Momentum) |
 |---|---|---|---|
-| **Kush** | Iron and the Bow | Ranged units +1 Strength | Rain of Arrows: 2 damage to every enemy unit |
+| **Kush** | Iron and the Bow | Ranged units +1 Strength while blocking | Rain of Arrows: 2 damage to every enemy unit |
 | **Aksum** | Coin and Stone | Harbors +1 Prosperity | Red Sea Commerce: +2 Prosperity, +1 Progress per Market/Harbor |
 | **Carthage** | Sea Lanes and Silver | Units cost 1 less | Close the Sea Lanes: rival −4 Prosperity −2 Progress, you +3 Prosperity |
-| **Sumer** | Canal and Tablet | Scribes: see the top card of each deck when picking | Rebuild the City: full repair, end Unrest, +3 Stability |
-| **Inca** | Road and Terrace | Storehouses: lose half Progress to raids and fallen buildings | Mountain Logistics: heal/ready units, +3 Prosperity, draw one of each |
+| **Sumer** | Canal and Tablet | Scribes: see the top card of each deck when picking; +1 Worker | Rebuild the City: full repair, end Unrest, +3 Stability |
+| **Inca** | Road and Terrace | Storehouses: lose half Progress to raids and fallen buildings | Mountain Logistics: heal/ready units, draw one of each |
 
 Each civilization has its own card in every Age of both decks (20 unique
 cards) on top of a shared backbone, and its own five Age names (e.g. Kush:

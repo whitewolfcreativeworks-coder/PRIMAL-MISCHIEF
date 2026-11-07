@@ -40,7 +40,7 @@ export function createGame(seed: number, setups: [PlayerSetup, PlayerSetup], fir
   });
   const first: PlayerId = firstPlayer ?? (Math.floor(((st.rng >>> 0) % 1000) / 500) as PlayerId);
   // Going second: a small head start.
-  st.players[other(first)].prosperity = 1;
+  st.players[other(first)].prosperity = 2;
   st.players[other(first)].momentum = 1;
   log(st, null, `${st.players[first].name} (${getCiv(st.players[first].civ).name}) moves first.`);
   const events: GameEvent[] = [];
@@ -136,7 +136,7 @@ function applyRequires(p: PlayerState, working: Set<string>) {
 
 /** The land around the city: Food and Workers every civilization has before it builds anything. */
 export const CITY_FOOD = 1;
-export const cityWorkers = (p: PlayerState) => p.age;
+export const cityWorkers = (p: PlayerState) => p.age + (getCiv(p.civ).trait.kind === 'scribes' ? 1 : 0);
 
 export interface CityLedger {
   /** Buildings doing their job: not in Unrest, requirements met, fed and staffed. */
@@ -247,10 +247,11 @@ export function maxIntegrity(b: BuildingInst): number {
   return (getCard(b.cardId).integrity ?? 1) + b.bonusIntegrity;
 }
 
-export function unitStr(p: PlayerState, u: UnitInst): number {
+/** A unit's Strength; `blocking` adds bonuses that only apply on its own bank (Land of the Bow). */
+export function unitStr(p: PlayerState, u: UnitInst, blocking = false): number {
   const c = getCard(u.cardId);
   const ranged = (c.keywords ?? []).includes('ranged');
-  return (c.str ?? 0) + (hasPassive(p, 'unitStr') ? 1 : 0) + (ranged && trait(p) === 'bowmen' ? 1 : 0) + u.buff;
+  return (c.str ?? 0) + (hasPassive(p, 'unitStr') ? 1 : 0) + (ranged && blocking && trait(p) === 'bowmen' ? 1 : 0) + u.buff;
 }
 
 export function unitMaxHp(p: PlayerState, u: UnitInst): number {
@@ -732,7 +733,7 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   const blockStr = hasPassive(def, 'blockStr') ? 1 : 0;
   let blockDmg = 0;
   // Holding the riverbank: attackers fight their way out of the water, so every blocker gets +1 Strength.
-  liveBlockers.forEach((b, i) => { blockDmg += unitStr(def, b) + RIVERBANK + blockStr + shield + bMatch[i] + (bMassed === 'spear' ? 1 : 0) + ((getCard(b.cardId).keywords ?? []).includes('ranged') ? 1 : 0); });
+  liveBlockers.forEach((b, i) => { blockDmg += unitStr(def, b, true) + RIVERBANK + blockStr + shield + bMatch[i] + (bMassed === 'spear' ? 1 : 0) + ((getCard(b.cardId).keywords ?? []).includes('ranged') ? 1 : 0); });
   if (has('turnTheTide')) blockDmg *= 2;
 
   const blockerHp = liveBlockers.reduce((s, b) => s + unitMaxHp(def, b) + shield - b.damage, 0);

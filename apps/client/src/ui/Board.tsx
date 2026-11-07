@@ -1,6 +1,6 @@
 import {
   actingPlayer, ageName, availableBlockers, canPlayCard, costOf, draftNeeded, getCard, getCiv, HIDDEN_CARD, incomeOf, isWorking,
-  maxIntegrity, other, playableReactions, progressNeeded, readyAttackers, RULES, trapText, tuckSpots, unitMaxHp, unitStr, workingBuildings,
+  maxIntegrity, other, playableReactions, previewPlay, progressNeeded, readyAttackers, roleOf, ROLE_LABEL, roleText, RULES, trapText, tuckSpots, unitMaxHp, unitStr, workingBuildings, cityLedger, beatsAny,
   type BuildingInst, type GameEvent, type GameState, type PlayerId, type PlayerState, type UnitInst,
 } from '@pm/engine';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
@@ -34,6 +34,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const [reaction, setReaction] = useState<string | null>(null);
   const [inspect, setInspect] = useState<{ cardId: string; owner: PlayerId; note?: string } | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [ledgerFor, setLedgerFor] = useState<PlayerId | null>(null);
   const [showHelp, setShowHelp] = useState(() => { if (match instanceof TutorialMatch) return false; try { return !localStorage.getItem('pm.seenHelp2'); } catch { return false; } });
   const [confirmSig, setConfirmSig] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
@@ -202,8 +203,11 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     const p = view!.players[owner];
     const working = isWorking(p, b.uid);
     const c = getCard(b.cardId);
+    const L = cityLedger(p);
     const note = b.unrest > 0 ? `In Unrest for ${b.unrest} more turn${b.unrest > 1 ? 's' : ''}.`
-      : !working ? `Not working: needs a working ${c.requires?.join(' or ')}.` : `Integrity ${maxIntegrity(b) - b.damage}/${maxIntegrity(b)}.`;
+      : L.hungry.includes(b.uid) ? 'Hungry: not enough Food. Build a Farm, or feed fewer soldiers.'
+        : L.idle.includes(b.uid) ? 'Idle: no Worker free. A fed Village gives one.'
+          : !working ? `Not working: needs a working ${c.requires?.join(' or ')}.` : `Integrity ${maxIntegrity(b) - b.damage}/${maxIntegrity(b)}.`;
     setInspect({ cardId: b.cardId, owner, note });
   }
 
@@ -230,13 +234,14 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     const w = workingBuildings(p);
     const isTarget = (targeting && ((targetSpec === 'enemyBuilding' && owner === opp) || (targetSpec === 'ownBuilding' && owner === me))) || (myMain && attackers.length > 0 && owner === opp);
     const hidden = (uid: string) => (owner === me ? (p.traps ?? []).filter((t) => t.at === uid).length : 0);
+    const L = cityLedger(p);
     const threatened = pending?.kind === 'attack' && pending.target.kind === 'building' ? pending.target.uid : pending?.kind === 'action' ? pending.targetUid : undefined;
     return (
       <div className="row buildings">
         {p.buildings.map((b) => (
           <BuildingTile key={b.uid} glow={glowPiece('building', owner === me ? 'me' : 'opp', b.cardId)} b={b} p={p} working={w.has(b.uid)} fx={fx[b.uid]}
             targetable={!!isTarget || (!!hiding && owner === me && spots.has(b.uid))} threatened={threatened === b.uid} onTap={() => tapBuilding(owner, b)} floaters={floatFor(b.uid)}
-            hidden={hidden(b.uid)} />
+            hidden={hidden(b.uid)} lack={L.hungry.includes(b.uid) ? 'hungry' : L.idle.includes(b.uid) ? 'idle' : undefined} />
         ))}
         {ghosts.filter((g) => g.owner === owner && g.kind === 'building').map((g) => <GhostTile key={g.key} cardId={g.cardId} />)}
         {p.buildings.length === 0 && !ghosts.some((g) => g.owner === owner && g.kind === 'building') && <div className="row-empty">{owner === me ? 'Your bank awaits its first building' : 'An empty riverbank'}</div>}
@@ -270,7 +275,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
 
   return (
     <div className={`match river-match ${myMain ? 'my-turn' : ''} ${responding ? 'responding' : ''} ${drafting ? 'drafting' : ''}`} style={rootStyle}>
-      <PlayerBar p={O} isMe={false} active={view.active === opp} over={view.phase === 'over'} floaters={floatFor('opp')}
+      <PlayerBar p={O} isMe={false} active={view.active === opp} over={view.phase === 'over'} floaters={floatFor('opp')} onCity={() => setLedgerFor(opp)}
         extra={
           <div className="bar-tools">
             {snap.online && <span className={`net ${snap.opponentConnected && snap.status === 'live' ? 'ok' : 'warn'}`} title="Connection">
@@ -308,6 +313,13 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
                     <Icon name="city" size={16} /> Attack their city
                   </button>
                   <span className="hint">or tap one of their buildings</span>
+                  {(() => {
+                    const mine = attackers.map((uid) => P.units.find((u) => u.uid === uid)).filter(Boolean).map((u) => roleOf(u!.cardId));
+                    const theirs = O.units.filter((u) => !u.attacked && !u.blocked).map((u) => roleOf(u.cardId));
+                    const good = mine.filter((r) => beatsAny(r, theirs)).length, bad = theirs.filter((r) => beatsAny(r, mine)).length;
+                    const roles = new Set(mine).size;
+                    return <span className="hint matchup">{theirs.length ? `Their bank: ${theirs.map((r) => ROLE_LABEL[r]).join(', ')}. ` : 'Their bank is empty. '}{good ? `${good} of yours beat them (+2). ` : ''}{bad ? `${bad} of theirs beat yours. ` : ''}{roles >= 3 ? 'Mixed army +2.' : ''}</span>;
+                  })()}
                   <button className="btn ghost" onClick={() => setAttackers([])}>Cancel</button>
                 </>
               )}
@@ -344,7 +356,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
         <HoloStage events={snap.events} eventSeq={snap.eventSeq} view={view} me={me} pace={pace} onBusy={(b) => { holoBusy.current = b; }} />
       </main>
 
-      <PlayerBar p={P} isMe active={view.active === me} over={view.phase === 'over'} floaters={floatFor('me')} />
+      <PlayerBar p={P} isMe active={view.active === me} over={view.phase === 'over'} floaters={floatFor('me')} onCity={() => setLedgerFor(me)} />
 
       <div className={`hand ${responding ? 'hand-respond' : ''} ${drafting ? 'hand-draft' : ''}`}>
         {P.hand.map((c, i) => {
@@ -380,6 +392,10 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
                 {getCard(selCard.cardId).target && getCard(selCard.cardId).target !== 'none' ? 'Choose target' : getCard(selCard.cardId).kind === 'unit' ? 'Deploy' : getCard(selCard.cardId).family === 'civ' ? 'Build' : 'Play'}
               </button>
             )}
+            {myMain && canPlayCard(view, me, selCard.uid) === null && (() => {
+              const pv = previewPlay(view, me, selCard.uid);
+              return pv.length > 0 && <ul className="play-preview" aria-label="What this does for your city">{pv.map((t) => <li key={t} className={/hungry|idle|short|−|-\d/.test(t) ? 'bad' : 'good'}>{t}</li>)}</ul>;
+            })()}
             {myMain && spots.size > 0 && (
               <div className="trap-offer">
                 <button className="btn trap-btn big" onClick={() => { setHiding(selCard.uid); setSelected(null); play('tap'); }}><Icon name="trap" size={18} /> Hide as a trap</button>
@@ -413,6 +429,8 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
           </div>
         </Sheet>
       )}
+
+      {ledgerFor !== null && <LedgerSheet p={view.players[ledgerFor]} mine={ledgerFor === me} onClose={() => setLedgerFor(null)} />}
 
       {showLog && (
         <Sheet onClose={() => setShowLog(false)} wide>
@@ -465,9 +483,10 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
 
 // ================================================================ pieces
 
-function PlayerBar({ p, isMe, active, extra, floaters, over }: { p: PlayerState; isMe: boolean; active: boolean; extra?: ReactNode; floaters: ReactNode; over: boolean }) {
+function PlayerBar({ p, isMe, active, extra, floaters, over, onCity }: { p: PlayerState; isMe: boolean; active: boolean; extra?: ReactNode; floaters: ReactNode; over: boolean; onCity?: () => void }) {
   const civ = getCiv(p.civ);
   const inc = incomeOf(p);
+  const L = inc.ledger;
   const needed = progressNeeded(p.age);
   const pct = (v: number, max: number) => `${Math.max(0, Math.min(100, (100 * v) / max))}%`;
   return (
@@ -491,9 +510,15 @@ function PlayerBar({ p, isMe, active, extra, floaters, over }: { p: PlayerState;
           <Icon name="stability" size={15} /><b>{p.stability}</b>
           <i style={{ '--w': pct(p.stability, RULES.startingStability) } as CSSProperties} />
         </div>
-        <div className={`chip prosperity ${inc.net < 0 ? 'danger' : ''}`} title={`Prosperity: spent to play cards. Next turn +${inc.prosperity} income, −${inc.upkeep} army upkeep.`}>
-          <Icon name="prosperity" size={15} /><b>{p.prosperity}</b><em>{inc.net >= 0 ? '+' : ''}{inc.net}</em>
+        <div className="chip prosperity" title={`Prosperity: spent to play cards. Next turn +${inc.prosperity}.`}>
+          <Icon name="prosperity" size={15} /><b>{p.prosperity}</b><em>+{inc.net}</em>
         </div>
+        <button className={`chip food ${inc.foodShort ? 'danger' : L.hungry.length ? 'warn' : ''}`} onClick={onCity} aria-label="Food and workers: open the city ledger"
+          title={`Food: ${L.food} made${L.stored ? ` + ${L.stored} stored` : ''}, city eats ${L.cityEats}, army eats ${L.armyEats}${inc.foodShort ? ` — ${inc.foodShort} short!` : ''}`}>
+          <Icon name="food" size={15} /><b>{L.food + L.stored - L.cityEats - L.armyEats}</b><em>spare</em>
+          <span className="sep" /><Icon name="worker" size={14} /><b>{L.workers - L.workersUsed}</b><em>free</em>
+          {L.sets > 0 && <><span className="sep" /><Icon name="star" size={13} /><b>{L.sets}</b></>}
+        </button>
         <div className="momentum" title="Momentum: from victories, reactions and new Ages; spend 3 on your Signature">
           {Array.from({ length: RULES.momentumCap }, (_, i) => <span key={i} className={i < p.momentum ? 'on' : ''} />)}
         </div>
@@ -553,14 +578,14 @@ function DraftPanel({ P, need, civPick, setCiv, discards, onDraft, glow }: {
   );
 }
 
-function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters, glow, hidden = 0 }: {
-  hidden?: number; glow?: boolean; b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
+function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters, glow, hidden = 0, lack }: {
+  lack?: 'hungry' | 'idle'; hidden?: number; glow?: boolean; b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
 }) {
   const card = getCard(b.cardId);
   const pal = paletteFor(card, p.civ);
   const maxI = maxIntegrity(b);
   const hp = maxI - b.damage;
-  const state = b.unrest > 0 ? 'unrest' : working ? 'working' : 'unsupported';
+  const state = b.unrest > 0 ? 'unrest' : working ? 'working' : lack ?? 'unsupported';
   return (
     <button className={`bld fam-${card.family} state-${state} ${glow ? 'coach-glow' : ''} ${fx ?? ''} ${targetable ? 'targetable' : ''} ${threatened ? 'threatened' : ''} rarity-${card.rarity ?? 'common'}`}
       style={{ '--c-primary': pal.primary, '--c-secondary': pal.secondary, '--c-accent': pal.accent } as CSSProperties}
@@ -577,6 +602,9 @@ function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floate
       </div>
       {state === 'unrest' && <div className="bld-flag unrest"><Icon name="unrest" size={12} />{b.unrest}</div>}
       {state === 'unsupported' && <div className="bld-flag broken"><Icon name="broken" size={12} /></div>}
+      {state === 'hungry' && <div className="bld-flag hungry" title="Hungry: not enough Food"><Icon name="food" size={12} /></div>}
+      {state === 'idle' && <div className="bld-flag idle" title="Idle: no Worker free"><Icon name="worker" size={12} /></div>}
+      <i className={`bld-age age-${card.age}`} aria-hidden />
       {hidden > 0 && <div className="bld-traps" aria-label={`${hidden} hidden trap${hidden > 1 ? 's' : ''}`}>{Array.from({ length: hidden }, (_, i) => <i key={i} />)}</div>}
       <div className="floaters">{floaters}</div>
     </button>
@@ -654,5 +682,58 @@ function Sheet({ children, onClose, wide }: { children: ReactNode; onClose: () =
     <div className="sheet-backdrop" onClick={onClose}>
       <div className={`sheet ${wide ? 'wide' : ''}`} onClick={(e) => e.stopPropagation()}>{children}</div>
     </div>
+  );
+}
+
+/** The city ledger: food, workers, sets and what to build next, in plain words. */
+function LedgerSheet({ p, mine, onClose }: { p: PlayerState; mine: boolean; onClose: () => void }) {
+  const inc = incomeOf(p), L = inc.ledger;
+  const nameOf = (uid: string) => getCard(p.buildings.find((b) => b.uid === uid)?.cardId ?? 'farm').name;
+  const farms = p.buildings.filter((b) => L.working.has(b.uid) && (getCard(b.cardId).tags ?? []).includes('farm')).length;
+  const houses = p.buildings.filter((b) => L.working.has(b.uid) && (getCard(b.cardId).tags ?? []).includes('housing')).length;
+  const places = p.buildings.filter((b) => L.working.has(b.uid) && (getCard(b.cardId).staff ?? 0) > 0).length;
+  const tips: string[] = [];
+  if (inc.foodShort) tips.push(`Your army is ${inc.foodShort} Food short: the weakest soldiers will desert at the start of your turn. Build a Farm, or let them go.`);
+  if (L.hungry.length) tips.push(`${L.hungry.map(nameOf).join(', ')} ${L.hungry.length > 1 ? 'are' : 'is'} hungry. A Farm makes 2 Food.`);
+  if (L.idle.length) tips.push(`${L.idle.map(nameOf).join(', ')} ${L.idle.length > 1 ? 'stand' : 'stands'} idle with no Worker. A fed Village gives one.`);
+  const lacking = farms <= houses && farms <= places ? 'a Farm' : houses <= places ? 'a Village' : 'a workplace (Quarry, Market, Temple)';
+  tips.push(`Next settlement: add ${lacking}. Each working Farm + fed Village + staffed workplace gives +1 Progress a turn.`);
+  const SP: Record<string, string> = { breadbasket: 'Breadbasket: three Farms, +1 Food each', crowded: 'Crowded City: three Villages, +1 Progress a turn', stone: 'Stone City: three Quarries, +1 Prosperity each' };
+  return (
+    <Sheet onClose={onClose} wide>
+      <h3 className="sheet-title">{mine ? 'Your city' : `${getCiv(p.civ).name}`}: food, people and work</h3>
+      <div className="ledger">
+        <section className="ledger-col">
+          <h4><Icon name="food" size={16} /> Food</h4>
+          <dl>
+            <div><dt>Made each turn</dt><dd>{L.food}</dd></div>
+            {L.storeCap > 0 && <div><dt>Kept in granaries</dt><dd>{L.stored} / {L.storeCap}</dd></div>}
+            <div><dt>Eaten by the city</dt><dd>−{L.cityEats}</dd></div>
+            <div><dt>Eaten by the army</dt><dd className={inc.foodShort ? 'bad' : ''}>−{L.armyEats}{inc.foodShort ? ` (${inc.foodShort} short)` : ''}</dd></div>
+            <div><dt>Spare: kept / sold</dt><dd>{L.keep} / +{L.sold} Prosperity</dd></div>
+          </dl>
+        </section>
+        <section className="ledger-col">
+          <h4><Icon name="worker" size={16} /> Workers</h4>
+          <dl>
+            <div><dt>From the city (one per Age)</dt><dd>{p.age}</dd></div>
+            <div><dt>From fed Villages</dt><dd>{L.workers - p.age}</dd></div>
+            <div><dt>At work</dt><dd>{L.workersUsed}</dd></div>
+            <div><dt>Free</dt><dd>{L.workers - L.workersUsed}</dd></div>
+          </dl>
+        </section>
+        <section className="ledger-col">
+          <h4><Icon name="star" size={16} /> Bonuses</h4>
+          <dl>
+            <div><dt>Complete settlements</dt><dd>{L.sets} (+{L.sets} Progress a turn)</dd></div>
+            {L.specialties.map((sp) => <div key={sp}><dt>Three of a kind</dt><dd>{SP[sp]}</dd></div>)}
+            <div><dt>Progress each turn</dt><dd>+{inc.growth}</dd></div>
+            <div><dt>Prosperity each turn</dt><dd>+{inc.prosperity}</dd></div>
+          </dl>
+        </section>
+      </div>
+      {mine && <ul className="ledger-tips">{tips.map((t) => <li key={t}>{t}</li>)}</ul>}
+      <div className="sheet-actions"><button className="btn ghost" onClick={onClose}>Close</button></div>
+    </Sheet>
   );
 }

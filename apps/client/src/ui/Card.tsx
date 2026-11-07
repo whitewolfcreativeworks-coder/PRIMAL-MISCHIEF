@@ -1,4 +1,4 @@
-import { getCard, getCiv, type CardDef, type CivId } from '@pm/engine';
+import { getCard, getCiv, ROLE_LABEL, roleText, type CardDef, type CivId } from '@pm/engine';
 import type { CSSProperties, ReactElement } from 'react';
 import { CardArt } from '../art/motifs';
 import { FAMILY_COLOR, FAMILY_LABEL, Icon, ROMAN } from './icons';
@@ -16,7 +16,7 @@ const KIND_LABEL: Record<CardDef['kind'], string> = {
 
 /** Rules text with keyword emphasis. */
 function RulesText({ text }: { text: string }) {
-  const parts = text.split(/(Hostile\.|Reaction to [^:]+:|Wall:|Tower:|Ranged:|Siege:|Swift:|Raider:|Wonder\.|Harbor\.?|Road:|Upkeep \d+\.?)/g);
+  const parts = text.split(/(Hostile\.|Reaction to [^:]+:|Wall:|Tower:|Ranged:|Siege:|Swift:|Raider:|Wonder\.|Harbor\.?|Road:|Eats \d+ Food\.?|Needs \d+ Worker\.?|Makes \d+ Food)/g);
   return <>{parts.map((s, i) => (i % 2 ? <b key={i}>{s}</b> : <span key={i}>{s}</span>))}</>;
 }
 
@@ -45,10 +45,14 @@ export function CardFace({ cardId, civ, cost, size = 'hand', disabled, selected,
   if (card.progress) stats.push(<span key="p" className="stat progress" title="Progress when played"><Icon name="progress" size={12} />+{card.progress}</span>);
   if (card.growth) stats.push(<span key="g" className="stat growth" title="Progress each turn"><Icon name="growth" size={12} />+{card.growth}/t</span>);
   if (card.income) stats.push(<span key="i" className="stat prosperity" title="Prosperity each turn"><Icon name="prosperity" size={12} />+{card.income}/t</span>);
+  if (card.food) stats.push(<span key="f" className="stat food" title="Food each turn"><Icon name="food" size={12} />+{card.food}</span>);
+  if (card.eats && card.kind !== 'unit') stats.push(<span key="e" className="stat eats" title="Food this building eats"><Icon name="food" size={12} />−{card.eats}</span>);
+  if (card.workers) stats.push(<span key="w" className="stat workers" title="Workers it gives"><Icon name="worker" size={12} />+{card.workers}</span>);
+  if (card.staff) stats.push(<span key="st" className="stat staff" title="Workers it needs"><Icon name="worker" size={12} />−{card.staff}</span>);
   if (card.kind === 'unit') {
     stats.push(<span key="s" className="stat str"><Icon name="str" size={13} />{card.str}</span>);
     stats.push(<span key="h" className="stat hp"><Icon name="hp" size={13} />{card.hp}</span>);
-    if (card.upkeep) stats.push(<span key="u" className="stat upkeep" title="Upkeep: Prosperity each turn"><Icon name="prosperity" size={12} />−{card.upkeep}/t</span>);
+    if (card.upkeep) stats.push(<span key="u" className="stat eats" title="Food it eats each turn"><Icon name="food" size={12} />−{card.upkeep}</span>);
   }
   if (card.kind === 'building' || card.kind === 'fort') stats.push(<span key="n" className="stat integrity"><Icon name="integrity" size={13} />{card.integrity}</span>);
   return (
@@ -65,6 +69,7 @@ export function CardFace({ cardId, civ, cost, size = 'hand', disabled, selected,
         </div>
         <div className="card-body">
           <div className="card-name">{card.name}</div>
+          {card.role && <div className={`card-role role-${card.role}`} title={roleText(card.role)}><Icon name={`role_${card.role}`} size={size === 'full' ? 15 : 11} /><span>{ROLE_LABEL[card.role]}</span></div>}
           <div className="card-type">{KIND_LABEL[card.kind]}{card.civ ? ` · ${getCiv(card.civ).name.replace('Kingdom of ', '')}` : ''}{rarity !== 'common' ? ` · ${rarity}` : ''}</div>
           <div className="card-text"><RulesText text={card.text} /></div>
           {size === 'full' && card.flavor && <div className="card-flavor">{card.flavor}</div>}

@@ -1,4 +1,4 @@
-import { getCard, getCiv, type CivId } from '@pm/engine';
+import { getCard, getCiv, roleText, type CivId } from '@pm/engine';
 import type { ReactNode } from 'react';
 import { HoloPreview } from '../holo/HoloStage';
 import { CardFace } from './Card';
@@ -16,12 +16,14 @@ const GLOSSARY: [RegExp, string, string][] = [
   [/Siege/, 'Siege', '+2 Strength when attacking a building, or a city protected by walls.'],
   [/Swift|attack the turn/, 'Swift', 'Can cross the river on the turn it is deployed. Normally units must wait a turn.'],
   [/Raider/, 'Raider', 'When the attack gets through, your rival loses 2 Progress.'],
-  [/Upkeep/, 'Upkeep', 'Prosperity this unit costs at the start of each of your turns. Units you cannot pay desert.'],
+  [/Eats \d+ Food|Eats no Food/, 'Food', 'Farms make Food each turn (and your land makes 1). Villages and Palaces eat first; soldiers eat what is left. Hungry buildings stand idle; hungry soldiers desert, weakest first. Spare Food fills your granaries, then sells for Prosperity.'],
+  [/Worker/, 'Workers', 'Each fed Village gives a Worker, and your city has one per Age. Workplaces (Quarries, Markets, Temples…) need one each, or they stand idle.'],
+  [/Makes \d+ Food|Counts as a Farm/, 'Farm', 'Makes Food. A working Farm, a fed Village and a staffed workplace together make a settlement: +1 Progress a turn. Three Farms make a Breadbasket: +1 Food each.'],
   [/Requires/, 'Requires', 'Only works while you have a working building of that kind. Lose it and this stops too.'],
   [/Wonder/, 'Wonder', 'A great monument of the fifth Age: one copy, a big Progress engine.'],
   [/Harbor/, 'Harbor', 'Supports Markets and launches fleets.'],
   [/Progress/, 'Progress', 'Fills your Age bar. A full bar advances your civilization to its next Age; completing Age V is a Golden Age victory.'],
-  [/Prosperity/, 'Prosperity', 'Your civilization’s wealth: earned every turn, spent to play cards and to pay your army’s upkeep.'],
+  [/Prosperity/, 'Prosperity', 'Your civilization’s wealth: earned every turn and spent to play cards. Spare Food sells for it.'],
 ];
 
 export function Inspector({ cardId, civ, cost, note, children }: { cardId: string; civ?: CivId; cost?: number; note?: ReactNode; children?: ReactNode }) {
@@ -29,6 +31,7 @@ export function Inspector({ cardId, civ, cost, note, children }: { cardId: strin
   const text = card.text;
   const terms = GLOSSARY.filter(([re]) => re.test(text));
   if (card.family === 'civ' && !terms.some(([, t]) => t === 'Progress')) terms.unshift([/./, 'Progress', 'Fills your Age bar. A full bar advances your civilization to its next Age; completing Age V is a Golden Age victory.']);
+  if (card.role) terms.unshift([/./, 'Battlefield role', `${roleText(card.role)}. A unit facing a role it beats fights with +2 Strength. Three different roles attacking together get +2; three of one role form a massed formation (archers volley, spears form a hedgehog, riders charge).`]);
   if (card.kind === 'unit') terms.unshift([/./, 'Strength and Health', 'Strength is the damage this unit deals in combat; Health is how much it can take before it falls. Damage heals at the end of each turn.']);
   if (card.kind === 'building') terms.unshift([/./, 'Integrity', 'How much damage the building can take. Each building you lose also costs 1 Stability.']);
   return (

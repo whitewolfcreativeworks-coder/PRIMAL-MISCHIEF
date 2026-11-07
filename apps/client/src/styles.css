@@ -708,3 +708,43 @@ input, select { font: inherit; }
   .title-screen { flex-direction: row; gap: 56px; }
   .title-screen > .title-cover { width: min(46vw, 70dvh, 620px); }
 }
+
+/* ---------------------------------------------------------------- food, workers, roles (v0.6) */
+button.chip { border: 0; font: inherit; color: inherit; cursor: pointer; min-height: 40px; }
+.chip.food { color: #cfe6a4; display: inline-flex; align-items: center; gap: .3em; }
+.chip.food .sep { width: 1px; height: 1em; background: rgba(255,255,255,.18); margin: 0 .25em; }
+.chip.food em { font-style: normal; font-size: .78em; opacity: .7; }
+.chip.food.warn { box-shadow: 0 0 0 1px #d9a441; }
+.chip.food.danger { box-shadow: 0 0 0 1px var(--red); animation: breathe 1.6s infinite; color: #ffb7a5; }
+.bld-flag.hungry { background: rgba(196, 128, 40, .92); color: #fff; left: auto; }
+.bld-flag.idle { background: rgba(90, 96, 110, .92); color: #fff; }
+.bld.state-hungry, .bld.state-idle { filter: saturate(.45) brightness(.8); }
+/* Colour by Age: each Age has its own colour on buildings (the owner's idea: make what is not obvious, obvious). */
+.bld-age { position: absolute; left: 10%; right: 10%; bottom: 3px; height: 3px; border-radius: 3px; pointer-events: none; }
+.bld-age.age-1 { background: #b9a888; } .bld-age.age-2 { background: #d08a4a; } .bld-age.age-3 { background: #e8c650; }
+.bld-age.age-4 { background: #5fa8e8; } .bld-age.age-5 { background: linear-gradient(90deg, #f3dfa6, #fff6d6, #f3dfa6); box-shadow: 0 0 6px #f3dfa6; }
+.stat.food { color: #b7d98a; } .stat.eats { color: #e5b06a; } .stat.workers, .stat.staff { color: #b9c7e8; }
+.card-role { display: inline-flex; align-items: center; gap: .3em; font-size: .7em; letter-spacing: .06em; text-transform: uppercase; color: var(--gold-2); opacity: .9; }
+.card-role em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--ink-2); margin-left: .4em; }
+.card-full .card-role { font-size: .82em; flex-wrap: wrap; }
+.play-preview { list-style: none; margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); display: flex; flex-direction: column; gap: 4px; font-size: .92em; }
+.play-preview li::before { content: '•'; margin-right: .5em; }
+.play-preview li.good { color: #cfe6a4; } .play-preview li.bad { color: #f2a68f; }
+.hint.matchup { color: var(--gold-2); }
+.ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.ledger-col { background: rgba(255,255,255,.035); border-radius: 12px; padding: 12px 14px; }
+.ledger-col h4 { margin: 0 0 8px; display: flex; align-items: center; gap: .4em; font-family: var(--display); color: var(--gold-2); font-weight: 400; }
+.ledger-col dl { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.ledger-col dl > div { display: flex; justify-content: space-between; gap: 10px; font-size: .92em; }
+.ledger-col dt { color: var(--ink-2); } .ledger-col dd { margin: 0; font-variant-numeric: tabular-nums; }
+.ledger-col dd.bad { color: #f2a68f; }
+.ledger-tips { margin: 12px 0 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; color: var(--ink); }
+/* Only the cards themselves take taps, so the bar above the hand stays tappable. */
+.hand, .hand-slot { pointer-events: none; }
+.hand .card, .hand .discard-tag, .hand .hand-empty { pointer-events: auto; }
+
+.lesson-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.lesson-btn { display: flex; justify-content: space-between; align-items: center; min-height: 44px; text-align: left; }
+.lesson-btn em { font-style: normal; opacity: .7; margin-left: 8px; }
+.lesson-btn.done { border-color: color-mix(in oklab, var(--c-secondary) 55%, transparent); }
+.lesson-btn.done em { color: var(--green); opacity: 1; }

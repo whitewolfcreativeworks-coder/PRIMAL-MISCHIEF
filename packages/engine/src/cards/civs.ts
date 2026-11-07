@@ -10,8 +10,8 @@ import { SHARED_TIERS } from './shared';
 export const CIV_CARDS: CardDef[] = [
   // ================================================================ KUSH
   { id: 'kush_cattle', civ: 'kush', name: 'Cattle Herds', family: 'civ', kind: 'building', age: 1, cost: 1, art: 'cattle',
-    income: 1, progress: 1, integrity: 3, tags: ['farm'], food: 2,
-    text: 'Makes 2 Food and +1 Prosperity each turn. Counts as a Farm.',
+    progress: 1, integrity: 4, tags: ['farm'], food: 2,
+    text: 'Makes 2 Food each turn. Counts as a Farm. Hardy: 4 Integrity.',
     flavor: 'Cattle were central to Nubian life; cattle skulls ring early Kerma burials.' },
   { id: 'kush_deffufa', civ: 'kush', name: 'Deffufa of Kerma', family: 'civ', kind: 'building', age: 2, cost: 3, art: 'deffufa',
     progress: 2, growth: 1, integrity: 6, tags: ['temple'], staff: 1,
@@ -78,8 +78,8 @@ export const CIV_CARDS: CardDef[] = [
 
   // ================================================================ CARTHAGE
   { id: 'carth_post', civ: 'carthage', name: 'Tyrian Trading Post', family: 'civ', kind: 'building', age: 1, cost: 2, art: 'port',
-    income: 1, progress: 1, integrity: 3, tags: ['harbor', 'trade'], staff: 1,
-    text: 'Needs 1 Worker. +1 Prosperity each turn. Harbor.',
+    income: 1, progress: 1, integrity: 3, tags: ['harbor', 'trade'], staff: 1, food: 1,
+    text: 'Needs 1 Worker. +1 Prosperity and 1 Food (imported grain) each turn. Harbor.',
     flavor: 'Carthage began as a settlement of traders from Tyre.' },
   { id: 'carth_cothon', civ: 'carthage', name: 'The Cothon', family: 'civ', kind: 'building', age: 2, cost: 4, art: 'cothon', rarity: 'rare',
     income: 1, progress: 2, integrity: 5, tags: ['harbor', 'trade'], passives: ['swift'], staff: 1,
@@ -114,8 +114,8 @@ export const CIV_CARDS: CardDef[] = [
 
   // ================================================================ SUMER
   { id: 'sumer_reeds', civ: 'sumer', name: 'Reed Houses', family: 'civ', kind: 'building', age: 1, cost: 2, art: 'reeds',
-    progress: 1, growth: 1, integrity: 2, tags: ['housing'], eats: 1, workers: 1,
-    text: 'Eats 1 Food. Gives 1 Worker and +1 Progress each turn.',
+    progress: 1, growth: 1, integrity: 2, tags: ['housing'], eats: 1, workers: 1, food: 1,
+    text: 'Makes 1 Food from the marshes and eats 1. Gives 1 Worker and +1 Progress each turn.',
     flavor: 'Arched reed houses are still built in the marshes of southern Iraq.' },
   { id: 'sumer_canals', civ: 'sumer', name: 'Irrigation Canals', family: 'civ', kind: 'building', age: 2, cost: 2, art: 'canal',
     progress: 2, integrity: 3, tags: ['canal'], requires: ['farm'], passives: ['farmBoost'],
@@ -207,7 +207,7 @@ export const CIVS: CivDef[] = [
     history: 'Nubian kingdoms rose at Kerma, then Napata and Meroë; Kush ruled Egypt as its 25th Dynasty and became a major iron-working centre.',
     palette: { primary: '#8a3b1e', secondary: '#d9a441', accent: '#f2d08a', ink: '#2a1408' },
     ages: ['Riverside Villages', 'Kerma', 'Napata', 'Meroë', 'Golden Age of Meroë'],
-    trait: { kind: 'bowmen', name: 'Land of the Bow', text: 'Your Ranged units have +1 Strength.' },
+    trait: { kind: 'bowmen', name: 'Land of the Bow', text: 'Your Ranged units have +1 Strength while blocking.' },
     signature: { name: 'Rain of Arrows', cost: 3, text: 'Deal 2 damage to every enemy unit.', effects: [{ op: 'damageEnemyUnits', amount: 2 }] },
     decks: decksFor('kush'),
   },
@@ -237,7 +237,7 @@ export const CIVS: CivDef[] = [
     history: 'Sumerian city-states such as Uruk and Ur built some of the earliest cities, irrigation networks and the cuneiform writing system.',
     palette: { primary: '#1d3f8f', secondary: '#c08a3e', accent: '#e8dcc0', ink: '#0d1a3b' },
     ages: ['Ubaid Villages', 'Uruk', 'City-States', 'Ur', 'Golden Age of Sumer'],
-    trait: { kind: 'scribes', name: 'Scribes', text: 'Before you pick, you see the top card of each deck.' },
+    trait: { kind: 'scribes', name: 'Scribes', text: 'Before you pick, you see the top card of each deck. Record-keeping organises labour: your city has +1 Worker.' },
     signature: { name: 'Rebuild the City', cost: 3, text: 'Fully repair all your buildings, end their Unrest, +3 Stability.', effects: [{ op: 'repairAll', full: true, clearUnrest: true }, { op: 'gain', res: 'stability', amount: 3 }] },
     decks: decksFor('sumer'),
   },
@@ -248,7 +248,7 @@ export const CIVS: CivDef[] = [
     palette: { primary: '#7a2e2a', secondary: '#d4a017', accent: '#efe2c4', ink: '#2a100e' },
     ages: ['Cusco Valley', 'Kingdom of Cusco', 'Tawantinsuyu', 'The Four Quarters United', 'Golden Age of the Inca'],
     trait: { kind: 'storehouses', name: 'Qullqa Storehouses', text: 'You lose only half as much Progress (rounded down) to raids and fallen buildings.' },
-    signature: { name: 'Mountain Logistics', cost: 3, text: 'Heal and ready all your units. +3 Prosperity. Draw a card from each deck.', effects: [{ op: 'readyUnits', heal: true }, { op: 'gain', res: 'prosperity', amount: 3 }, { op: 'draw', family: 'civ', n: 1 }, { op: 'draw', family: 'mil', n: 1 }] },
+    signature: { name: 'Mountain Logistics', cost: 3, text: 'Heal and ready all your units. Draw a card from each deck.', effects: [{ op: 'readyUnits', heal: true }, { op: 'draw', family: 'civ', n: 1 }, { op: 'draw', family: 'mil', n: 1 }] },
     decks: decksFor('inca'),
   },
 ];

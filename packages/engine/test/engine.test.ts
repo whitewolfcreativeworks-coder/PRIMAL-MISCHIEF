@@ -41,7 +41,7 @@ describe('setup and draft', () => {
     expect(st.phase).toBe('draft');
     expect(st.players[0].hand.length).toBe(0);
     expect(st.players[0].prosperity).toBe(4); // 3 base + 1 spare Food from the land, sold
-    expect(st.players[1].prosperity).toBe(1);
+    expect(st.players[1].prosperity).toBe(2);
     expect(st.players[1].momentum).toBe(1);
     expect(st.players[0].piles.civ.every((c) => getCard(c.cardId).age === 1)).toBe(true);
   });
@@ -280,7 +280,7 @@ describe('roles, matchups and formations', () => {
   it('a mixed army of three roles gets +2; no matchups against an empty bank', () => {
     const { c } = fight(['spearmen', 'archers', 'carth_cavalry'], []);
     expect(c.tactics).toMatchObject({ mixed: true, attackerMatch: 0 });
-    expect(c.power).toBe(2 + 3 + 3 + 2); // Kush bowmen make the archers 3
+    expect(c.power).toBe(2 + 2 + 3 + 2); // (Kush bowmen only help while blocking)
   });
   it('massed archers loose a volley before the clash', () => {
     const { c } = fight(['archers', 'archers', 'kush_archers'], ['militia']);
@@ -447,7 +447,7 @@ describe('civilization traits', () => {
     const k = ready(fresh('kush', 'sumer'));
     const archer = unit(k, 0, 'archers');
     const s = attackAndResolve(k, [archer], { kind: 'city' }).state;
-    expect(s.players[1].stability).toBe(19);
+    expect(s.players[1].stability).toBe(20); // Land of the Bow helps only while blocking
     const c = ready(fresh('carthage', 'sumer'), 3);
     expect(applyAction(c, 0, { type: 'play', uid: give(c, 0, 'eliteGuard') }).state.players[0].prosperity).toBe(0); // 4 - 1 = 3
     const kk = ready(fresh('kush', 'sumer'), 3);

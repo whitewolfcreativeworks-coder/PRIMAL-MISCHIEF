@@ -532,7 +532,8 @@ function developmentCrew(c: CardDef): { crew: Role[]; act: Act; pack?: boolean; 
 }
 
 /** A Civilization card: your city at its Age, and that culture's people raising the new work. */
-export function growScene(cardId: string, civ: CivId, age: number, mine: boolean, progress?: number): Vignette {
+/** `status`: how the new building stands in the city right after (from the city ledger). */
+export function growScene(cardId: string, civ: CivId, age: number, mine: boolean, progress?: number, status?: 'hungry' | 'idle' | 'settlement'): Vignette {
   const c = getCard(cardId);
   const color = col(mine);
   const isBuilding = c.kind === 'building';
@@ -594,6 +595,8 @@ export function growScene(cardId: string, civ: CivId, age: number, mine: boolean
       } else if (c.art === 'coin' && t > 0.8 && t < 2.2 && Math.floor(t * 10) % 2 === 0) s.burst([0, 0.15, 0.2], GOLD, 5, { speed: 0.5, gravity: 0.9, ttl: 0.6 });
       if (t > dur - 1.4 && t < dur - 0.5 && Math.floor(t * 14) % 2 === 0) s.burst([isBuilding ? 0.35 : 0, 0.2, 0], GOLD, 5, { speed: 0.4, gravity: -0.6, ttl: 0.9, size: 0.035, up: 0.6 });
       if (gain && t > dur - 1.3) s.once('lbl', () => s.label(`+${gain} Progress`, [0, 0.95, 0], '#f3dfa6', 1.2, 0.34));
+      if (b && status && t > dur - 1.1) s.once('status', () => s.label(status === 'hungry' ? 'Hungry: needs Food' : status === 'idle' ? 'Idle: no Worker free' : 'A complete settlement!', [0.35, 0.7, 0.1], status === 'settlement' ? '#cfe6a4' : '#ffd2a8', 1.1, 0.26));
+      if (b && (status === 'hungry' || status === 'idle') && t > dur - 1.1) b.uniforms.uOpacity.value = Math.min(b.uniforms.uOpacity.value, 0.45);
       s.fadeAll(seg(t, dur - 0.35, dur));
     },
   };

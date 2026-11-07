@@ -25,8 +25,16 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
             <p>Civilization cards give Progress when you play them, and some buildings add Progress every turn. Fill the bar and your civilization enters its next Age: stronger cards join both of your decks and the oldest retire.</p>
           </section>
           <section>
-            <h4><Icon name="prosperity" /> Prosperity and upkeep</h4>
-            <p>Every turn your civilization earns Prosperity, which pays for everything you play. Armies cost upkeep from that same Prosperity each turn. Soldiers you cannot pay desert.</p>
+            <h4><Icon name="prosperity" /> Prosperity</h4>
+            <p>Every turn your civilization earns Prosperity, which pays for everything you play. Spare Food sells for more.</p>
+          </section>
+          <section>
+            <h4><Icon name="food" /> Food, people and work</h4>
+            <p>Farms make Food (your land makes 1). Villages eat first and give a Worker and Progress; workplaces (Quarries, Markets, Temples…) need a Worker each. Your soldiers eat what is left: hungry soldiers desert, weakest first. A working Farm, a fed Village and a staffed workplace make a settlement (+1 Progress a turn); three of the same building is a specialty. Tap the Food chip on your bar for the city ledger.</p>
+          </section>
+          <section>
+            <h4><Icon name="role_spear" /> Who beats whom</h4>
+            <p>Every soldier has a role. Spears beat riders, riders beat archers and shields, archers beat spears, shields blunt arrows; the Inca’s skirmishers take the riders’ place. A soldier facing a role it beats fights with +2. Three different roles attacking together get +2; three of one role form a massed formation: archers volley, spears form a hedgehog, riders charge.</p>
           </section>
           <section>
             <h4><Icon name="str" /> Crossing the river</h4>

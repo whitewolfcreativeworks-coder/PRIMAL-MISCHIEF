@@ -116,18 +116,18 @@ const kush: Lesson = {
       'Set at least 2 Military and at least 1 Civilization, keep every card, then tap Draw.',
     ),
     playStep(
-      'Your Age bar stands at 7 of 8. Cattle Herds costs 1 Prosperity, gives +1 Progress when built and +1 Prosperity every turn. Build it and watch Kush enter a new Age.',
+      'Your Age bar stands at 7 of 8. Cattle Herds costs 1 Prosperity, gives +1 Progress when built and makes 2 Food every turn: food for your people and your soldiers. Build it and watch Kush enter a new Age.',
       'kush_cattle',
       'Play Cattle Herds from your hand.',
     ),
     playStep(
-      'Welcome to Kerma, Age II. Stronger cards joined both decks and you gained 2 Momentum. Your Military picks brought Archers of Ta-Seti. Land of the Bow, the Kush trait, gives Ranged units +1 Strength, so they hit for 3. Deploy them.',
+      'Welcome to Kerma, Age II. Stronger cards joined both decks and you gained 2 Momentum. Your Military picks brought Archers of Ta-Seti. Land of the Bow, the Kush trait, gives Ranged units +1 Strength while they defend your bank. Deploy them.',
       'kush_archers',
       'Play Archers of Ta-Seti.',
     ),
     endTurnStep('New units must wait a turn before they cross, but they can defend right away. You also drew an Ambush, a reaction you play on Carthage’s turn. Keep 2 Prosperity for it and end your turn.'),
     {
-      text: 'Carthage sends both Mercenaries at your city: 6 Strength. Your Archers alone would strike back with 5 (3, +1 for holding the riverbank, +1 for Ranged), but they would fall and 4 damage would hit your city. Play Ambush and block with your Archers.',
+      text: 'Carthage sends both Mercenaries at your city: 6 Strength. Your Archers would strike back with 7 (2, +1 Land of the Bow, +1 for holding the riverbank, +1 for Ranged, +2 because archers beat spearmen), but the Mercenaries’ 6 would cut them down and 4 damage would hit your city. Play Ambush and block with your Archers.',
       onEnter: (t) => {
         oppDraft(t);
         t.opp({ type: 'attack', unitUids: unitUids(t.state, 1), target: { kind: 'city' } });
@@ -161,7 +161,7 @@ const kush: Lesson = {
       highlight: [{ kind: 'unit', cardId: 'kush_archers', owner: 'me' }, { kind: 'button', name: 'attackCity' }],
     },
     {
-      text: 'Unblocked, your Archers deal 3 and Carthage falls to 19 Stability. That is Kush: draft enough bows, let iron and archers hold the bank, and turn every failed attack into Momentum.',
+      text: 'Unblocked, your Archers deal 2 and Carthage falls to 20 Stability. That is Kush: draft enough bows, let iron and archers hold the bank, and turn every failed attack into Momentum.',
     },
   ],
 };
@@ -242,6 +242,7 @@ const carthage: Lesson = {
     t.edit((st) => { st.phase = 'draft'; const p = st.players[0]; p.progress = 6; p.prosperity = 8; st.players[1].progress = 6; });
     stack(t, 0, 'civ', 'carth_cothon');
     stack(t, 0, 'mil', 'carth_mercs', 'raiders');
+    t.build(0, 'farm'); // food for the soldiers you are about to hire
     t.build(1, 'aksum_fields', 'aksum_adulis', 'market');
   },
   steps: [
@@ -329,7 +330,7 @@ const sumer: Lesson = {
       { highlight: [{ kind: 'button', name: 'draft' }] },
     ),
     playStep(
-      'Your Age bar is at 6 of 8. Irrigation Canals give 2 Progress and make each of your Farms produce +1 Prosperity. They need a Farm, and you have one. Dig them.',
+      'Your Age bar is at 6 of 8. Irrigation Canals give 2 Progress and make each of your Farms produce +1 Food. They need a Farm, and you have one. Dig them.',
       'sumer_canals',
       'Play Irrigation Canals.',
     ),

@@ -2,6 +2,7 @@ import { CIVS, type CivId, type Difficulty } from '@pm/engine';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { defaultServerUrl, LocalMatch, OnlineMatch, savedRoom, TutorialMatch, type AnyMatch } from './game/match';
 import { LESSONS } from './game/lessons';
+import { LAYER_LESSONS } from './game/lessons2';
 import type { Lesson } from './game/tutorial';
 import { Board } from './ui/Board';
 import { Gallery } from './ui/Gallery';
@@ -81,7 +82,7 @@ export function App() {
 
   function exit() {
     const lesson = match instanceof TutorialMatch ? match.runner : null;
-    if (lesson && lesson.coach.mode === 'done') markLessonDone(lesson.lesson.civ);
+    if (lesson && lesson.coach.mode === 'done') markLessonDone(lesson.lesson.id);
     if (match instanceof OnlineMatch) match.leave(); else match?.dispose();
     setMatch(null);
     setScreen(lesson ? 'academy' : 'title');
@@ -106,7 +107,7 @@ export function App() {
     body = <Lobby civ={civ} setCiv={setCiv} onBack={() => setScreen('title')} onDeck={(c) => openDeck(c, 'online')} initialCode={inviteCode}
       onCreate={() => startOnline('create')} onJoin={(code) => startOnline('join', code)} serverUrl={serverUrl} setServerUrl={setServerUrl} />;
   } else if (screen === 'academy') {
-    body = <Academy lessons={LESSONS} onStart={startLesson} onBack={() => setScreen('title')} />;
+    body = <Academy lessons={[...LESSONS, ...LAYER_LESSONS]} onStart={startLesson} onBack={() => setScreen('title')} />;
   } else if (screen === 'gallery') {
     body = <Gallery onBack={() => setScreen('title')} initialCiv={(params.get('theater') as CivId) || civ || undefined} />;
   } else if (screen === 'deck') {

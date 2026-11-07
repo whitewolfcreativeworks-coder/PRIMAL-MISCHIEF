@@ -211,6 +211,8 @@ export function WaitingRoom({ code, onCancel }: { code: string; onCancel: () => 
 
 export function Academy({ lessons, onStart, onBack }: { lessons: Lesson[]; onStart: (l: Lesson) => void; onBack: () => void }) {
   const done = (() => { try { return new Set<string>(JSON.parse(localStorage.getItem('pm.lessonsDone') ?? '[]')); } catch { return new Set<string>(); } })();
+  const isDone = (l: Lesson) => done.has(l.id) || (!/-(build|army|mischief)$/.test(l.id) && done.has(l.civ));
+  const LAYER: Record<string, string> = { build: 'Build: food, people and work', army: 'Army: who beats whom', mischief: 'Mischief: traps and probes' };
   return (
     <div className="screen academy-screen">
       <header className="screen-head">
@@ -218,23 +220,32 @@ export function Academy({ lessons, onStart, onBack }: { lessons: Lesson[]; onSta
         <h2>Academy</h2>
         <span />
       </header>
-      <p className="academy-intro">Each lesson sets up a small battle and walks you through one civilization’s unique cards, its signature ability and a winning trick. Takes about three minutes.</p>
+      <p className="academy-intro">Four short lessons per civilization, about three minutes each: its own strengths first, then the three layers of the game. How to build a city, how to pick an army, and how to set traps and probe for them.</p>
       <div className="civ-grid">
         {CIVS.map((c) => {
-          const l = lessons.find((x) => x.civ === c.id);
+          const own = lessons.filter((x) => x.civ === c.id);
+          const intro = own.find((x) => !/-(build|army|mischief)$/.test(x.id));
           return (
-            <button key={c.id} className="civ-panel lesson-panel" disabled={!l} onClick={() => l && onStart(l)}
+            <div key={c.id} className="civ-panel lesson-panel"
               style={{ '--c-primary': c.palette.primary, '--c-secondary': c.palette.secondary, '--c-accent': c.palette.accent, '--c-ink': c.palette.ink } as CSSProperties}>
               <div className="civ-top">
                 <CivEmblem civ={c.id} palette={c.palette} size={64} />
                 <div>
                   <div className="civ-name">{c.name}</div>
-                  <div className="civ-epithet">{l ? l.title : 'Coming soon'}</div>
+                  <div className="civ-epithet">{intro?.title ?? c.epithet}</div>
                 </div>
               </div>
-              <p className="civ-summary">{l?.summary ?? c.summary}</p>
-              <span className="lesson-cta">{done.has(c.id) ? '✓ Completed · replay' : 'Start lesson →'}</span>
-            </button>
+              <div className="lesson-list">
+                {own.map((l) => {
+                  const layer = l.id.split('-').pop()!;
+                  return (
+                    <button key={l.id} className={`btn small lesson-btn ${isDone(l) ? 'done' : ''}`} onClick={() => onStart(l)} title={l.summary}>
+                      <span>{LAYER[layer] ?? `Strengths: ${l.title}`}</span><em>{isDone(l) ? '✓' : '→'}</em>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </div>
@@ -242,6 +253,6 @@ export function Academy({ lessons, onStart, onBack }: { lessons: Lesson[]; onSta
   );
 }
 
-export function markLessonDone(civ: string) {
-  try { const s = new Set<string>(JSON.parse(localStorage.getItem('pm.lessonsDone') ?? '[]')); s.add(civ); localStorage.setItem('pm.lessonsDone', JSON.stringify([...s])); } catch { /* ignore */ }
+export function markLessonDone(id: string) {
+  try { const s = new Set<string>(JSON.parse(localStorage.getItem('pm.lessonsDone') ?? '[]')); s.add(id); localStorage.setItem('pm.lessonsDone', JSON.stringify([...s])); } catch { /* ignore */ }
 }

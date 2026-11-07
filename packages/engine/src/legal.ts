@@ -1,7 +1,7 @@
 import { getCard, getCiv } from './data';
-import { ACTION_REACTIONS, ATTACK_REACTIONS, braceOf, canPlayCard, other, requireMainPhase, SNARE_DAMAGE, trapRole, trapsOf, trapWallOf } from './engine';
+import { ACTION_REACTIONS, applyAction, ATTACK_REACTIONS, braceOf, canPlayCard, incomeOf, other, requireMainPhase, ROLE_BEATS, SNARE_DAMAGE, trapRole, trapsOf, trapWallOf } from './engine';
 import { RULES } from './data';
-import type { Action, CardDef, GameState, PlayerId } from './types';
+import type { Action, CardDef, GameState, PlayerId, PlayerState, UnitRole } from './types';
 
 /** All targets a card could legally take (undefined entry = no target needed). */
 export function targetsFor(st: GameState, pid: PlayerId, card: CardDef): (string | undefined)[] {
@@ -65,4 +65,57 @@ export function tuckSpots(st: GameState, pid: PlayerId): string[] {
   const p = st.players[pid];
   const count = (at: string) => trapsOf(p).filter((t) => t.at === at).length;
   return ['city', ...p.buildings.map((b) => b.uid)].filter((at) => count(at) < RULES.trapsPerSpot);
+}
+
+// ---------------------------------------------------------------- explaining the city and the army
+
+export const ROLE_LABEL: Record<UnitRole, string> = {
+  spear: 'Spear', rider: 'Rider', archer: 'Archer', shield: 'Shield', siege: 'Siege', skirmisher: 'Skirmisher', raider: 'Raider',
+};
+/** "Beats Riders and Skirmishers · weak to Archers" */
+const ROLE_PLURAL: Record<UnitRole, string> = {
+  spear: 'spears', rider: 'riders', archer: 'archers', shield: 'shields', siege: 'siege engines', skirmisher: 'skirmishers', raider: 'raiders',
+};
+export function roleText(r: UnitRole): string {
+  const beats = ROLE_BEATS[r].map((x) => ROLE_PLURAL[x]);
+  const weak = (Object.keys(ROLE_BEATS) as UnitRole[]).filter((o) => ROLE_BEATS[o].includes(r)).map((x) => ROLE_PLURAL[x]);
+  return [beats.length ? `Beats ${beats.join(' and ')}` : r === 'siege' ? 'Breaks walls and buildings' : 'Raids Progress', weak.length ? `weak to ${weak.join(' and ')}` : ''].filter(Boolean).join(' · ');
+}
+
+export interface CitySummary { food: number; foodShort: number; spare: number; growth: number; prosperity: number; workers: number; workersUsed: number; hungry: number; idle: number; sets: number; specialties: string[]; working: number }
+export function citySummary(p: PlayerState): CitySummary {
+  const inc = incomeOf(p), L = inc.ledger;
+  return { food: L.food, foodShort: inc.foodShort, spare: L.spare, growth: inc.growth, prosperity: inc.prosperity, workers: L.workers, workersUsed: L.workersUsed,
+    hungry: L.hungry.length, idle: L.idle.length, sets: L.sets, specialties: [...L.specialties], working: L.working.size };
+}
+
+/**
+ * What playing a card would do to your city, in plain words (before you commit):
+ * e.g. "+1 Progress a turn", "feeds a hungry Village", "no Worker free: will stand idle".
+ */
+export function previewPlay(st: GameState, pid: PlayerId, uid: string): string[] {
+  const inst = st.players[pid].hand.find((c) => c.uid === uid);
+  if (!inst || inst.cardId === '?') return [];
+  const card = getCard(inst.cardId);
+  if (card.target && card.target !== 'none') return [];
+  if (card.kind !== 'building' && card.kind !== 'unit' && card.kind !== 'fort') return [];
+  let after: GameState;
+  try { after = applyAction(st, pid, { type: 'play', uid }).state; } catch { return []; }
+  const a = citySummary(st.players[pid]), b = citySummary(after.players[pid]);
+  const out: string[] = [];
+  const d = (x: number, y: number) => y - x;
+  if (d(a.growth, b.growth) > 0) out.push(`+${d(a.growth, b.growth)} Progress a turn`);
+  if (d(a.growth, b.growth) < 0) out.push(`${d(a.growth, b.growth)} Progress a turn`);
+  if (d(a.prosperity, b.prosperity) > 0) out.push(`+${d(a.prosperity, b.prosperity)} Prosperity a turn`);
+  if (d(a.prosperity, b.prosperity) < 0) out.push(`${d(a.prosperity, b.prosperity)} Prosperity a turn (spare Food is eaten)`);
+  if (d(a.food, b.food) > 0) out.push(`+${d(a.food, b.food)} Food`);
+  if (b.hungry < a.hungry) out.push(`feeds ${a.hungry - b.hungry} hungry building${a.hungry - b.hungry > 1 ? 's' : ''}`);
+  if (b.hungry > a.hungry) out.push(`not enough Food: ${b.hungry - a.hungry} building${b.hungry - a.hungry > 1 ? 's go' : ' goes'} hungry`);
+  if (b.idle < a.idle) out.push(`staffs ${a.idle - b.idle} idle workplace${a.idle - b.idle > 1 ? 's' : ''}`);
+  if (b.idle > a.idle) out.push(`no Worker free: ${b.idle - a.idle} workplace${b.idle - a.idle > 1 ? 's stand' : ' stands'} idle`);
+  if (b.sets > a.sets) out.push(`completes a settlement (+1 Progress a turn)`);
+  for (const sp of b.specialties) if (!a.specialties.includes(sp)) out.push(`three of a kind: ${({ breadbasket: 'Breadbasket (+1 Food per Farm)', crowded: 'Crowded City (+1 Progress a turn)', stone: 'Stone City (+1 Prosperity per Quarry)' } as Record<string, string>)[sp]}`);
+  if (b.foodShort > a.foodShort) out.push(`your army would go hungry: ${b.foodShort} Food short, the weakest desert`);
+  else if (card.kind === 'unit') out.push(`eats ${card.upkeep ?? 0} Food a turn (${Math.max(0, b.spare)} spare after)`);
+  return out;
 }
