@@ -180,7 +180,44 @@ export const CIV_CARDS: CardDef[] = [
     str: 4, hp: 5, role: 'skirmisher', upkeep: 1, text: 'Eats 1 Food.', flavor: 'Star-headed bronze and stone maces were a hallmark of Andean warfare.' },
   { id: 'inca_army', civ: 'inca', name: 'Army of the Four Quarters', family: 'mil', kind: 'unit', age: 5, cost: 6, art: 'grandArmy', rarity: 'rare',
     str: 5, hp: 6, role: 'spear', upkeep: 2, keywords: ['swift'], text: 'Swift: can attack the turn it is deployed. Eats 2 Food.' },
+  { id: 'norse_fishing', civ: 'norse', name: 'Fishing Grounds', family: 'civ', kind: 'building', age: 1, cost: 1, art: 'fishing',
+    progress: 1, integrity: 3, tags: ['farm'], food: 2, text: 'Makes 2 Food each turn. Counts as a Farm.',
+    flavor: 'Dried cod and herring fed Norse households through long winters and were traded far afield.' },
+  { id: 'norse_market', civ: 'norse', name: 'Hedeby Market', family: 'civ', kind: 'building', age: 2, cost: 3, art: 'norseMarket',
+    income: 1, progress: 2, integrity: 3, tags: ['harbor', 'trade'], staff: 1,
+    text: 'Needs 1 Worker. +1 Prosperity each turn. Harbor.',
+    flavor: 'Hedeby, on the Baltic, was a busy trading town where silver, furs, glass and enslaved people changed hands.' },
+  { id: 'norse_thing', civ: 'norse', name: 'The Thing', family: 'civ', kind: 'building', age: 3, cost: 3, art: 'thing',
+    progress: 2, growth: 1, integrity: 4, tags: ['assembly'], effects: [{ op: 'gain', res: 'stability', amount: 2 }],
+    text: '+1 Progress each turn. When built, +2 Stability.',
+    flavor: 'Free men met at the Thing to settle disputes and make law; Iceland’s Althing was founded around 930.' },
+  { id: 'norse_trelleborg', civ: 'norse', name: 'Trelleborg Ring Fortress', family: 'civ', kind: 'building', age: 4, cost: 5, art: 'ringfort', rarity: 'rare',
+    progress: 3, growth: 1, integrity: 8, tags: ['walls'], passives: ['wall'],
+    text: '+1 Progress each turn. Wall: damage that gets past your blockers hits this first.',
+    flavor: 'Circular fortresses with four gates and halls in each quarter were built in Denmark around 980.' },
+  { id: 'norse_hall', civ: 'norse', name: 'Hall of the Sea Kings', family: 'civ', kind: 'building', age: 5, cost: 7, art: 'hall', rarity: 'wonder',
+    progress: 6, growth: 2, integrity: 8, tags: ['wonder'], text: 'Wonder. +2 Progress each turn.',
+    flavor: 'Great timber halls, like those excavated at Lejre and Borg, were the seats of chieftains and kings.' },
+
+  { id: 'norse_raiders', civ: 'norse', name: 'Longship Raiders', family: 'mil', kind: 'unit', age: 1, cost: 2, art: 'longship',
+    str: 2, hp: 3, role: 'raider', upkeep: 1, keywords: ['raider', 'swift'],
+    text: 'Swift. Raider: when this attack gets through, the rival loses 2 Progress. Eats 1 Food.',
+    flavor: 'Shallow-draught longships could cross open sea and row far up rivers.' },
+  { id: 'norse_shieldwall', civ: 'norse', name: 'Shield-Wall Freemen', family: 'mil', kind: 'unit', age: 2, cost: 2, art: 'norseShields',
+    str: 2, hp: 3, role: 'shield', upkeep: 1, text: 'Eats 1 Food.',
+    flavor: 'Free farmers (bóndi) were expected to own weapons and stand together behind overlapping round shields.' },
+  { id: 'norse_huscarls', civ: 'norse', name: 'Huscarls', family: 'mil', kind: 'unit', age: 3, cost: 4, art: 'huscarls',
+    str: 4, hp: 4, role: 'spear', upkeep: 1, text: 'Eats 1 Food.',
+    flavor: 'Household warriors of a lord, armed with spear, sword and the long Dane axe.' },
+  { id: 'norse_raid', civ: 'norse', name: 'Coastal Raid', family: 'mil', kind: 'tactic', age: 4, cost: 3, art: 'coastalRaid',
+    hostile: true, effects: [{ op: 'gain', res: 'prosperity', amount: -3, who: 'opp' }, { op: 'gain', res: 'progress', amount: -2, who: 'opp' }],
+    text: 'Hostile. The rival loses 3 Prosperity and 2 Progress.' },
+  { id: 'norse_fleet', civ: 'norse', name: 'The Great Fleet', family: 'mil', kind: 'unit', age: 5, cost: 6, art: 'greatFleet', rarity: 'rare',
+    str: 5, hp: 6, role: 'spear', upkeep: 2, keywords: ['raider', 'swift'],
+    text: 'Swift. Raider: when this attack gets through, the rival loses 2 Progress. Eats 2 Food.',
+    flavor: 'Large combined fleets campaigned for years in England and Francia in the late 9th century.' },
 ];
+
 
 /** Civilization's own card per Age, per deck: [I, II, III, IV, V]. */
 const OWN: Record<CivId, Record<Family, string[]>> = {
@@ -188,6 +225,7 @@ const OWN: Record<CivId, Record<Family, string[]>> = {
   aksum: { civ: ['aksum_fields', 'aksum_adulis', 'aksum_coinage', 'aksum_stele', 'aksum_stelae'], mil: ['aksum_spearmen', 'aksum_fleet', 'aksum_treaty', 'aksum_elephants', 'aksum_campaign'] },
   carthage: { civ: ['carth_post', 'carth_cothon', 'carth_dye', 'carth_estates', 'carth_byrsa'], mil: ['carth_mercs', 'carth_cavalry', 'carth_quinq', 'carth_blockade', 'carth_elephants'] },
   sumer: { civ: ['sumer_reeds', 'sumer_canals', 'sumer_archive', 'sumer_ziggurat', 'sumer_ur'], mil: ['sumer_wagon', 'sumer_uruk', 'sumer_phalanx', 'sumer_restore', 'sumer_host'] },
+  norse: { civ: ['norse_fishing', 'norse_market', 'norse_thing', 'norse_trelleborg', 'norse_hall'], mil: ['norse_raiders', 'norse_shieldwall', 'norse_huscarls', 'norse_raid', 'norse_fleet'] },
   inca: { civ: ['inca_terraces', 'inca_road', 'inca_qullqa', 'inca_masonry', 'inca_fortress'], mil: ['inca_slingers', 'inca_chasqui', 'inca_mountain', 'inca_mace', 'inca_army'] },
 };
 
@@ -250,5 +288,15 @@ export const CIVS: CivDef[] = [
     trait: { kind: 'storehouses', name: 'Qullqa Storehouses', text: 'You lose only half as much Progress (rounded down) to raids and fallen buildings.' },
     signature: { name: 'Mountain Logistics', cost: 3, text: 'Heal and ready all your units. Draw a card from each deck.', effects: [{ op: 'readyUnits', heal: true }, { op: 'draw', family: 'civ', n: 1 }, { op: 'draw', family: 'mil', n: 1 }] },
     decks: decksFor('inca'),
+  },
+  {
+    id: 'norse', name: 'Norse', region: 'Scandinavia and the North Atlantic', era: 'c. 793 – 1066 CE', epithet: 'Keel and Shield Wall',
+    summary: 'Raiders of the sea lanes. Longships strike the turn they land, plunder every breach, and shield walls hold the shore.',
+    history: 'Norse seafarers from Scandinavia raided, traded and settled from the Volga to Iceland, Greenland and Newfoundland, governed by law assemblies.',
+    palette: { primary: '#2e4a45', secondary: '#c29a5b', accent: '#efe2c4', ink: '#101b19' },
+    ages: ['Fjord Farmsteads', 'Market Towns', 'Sea Kings', 'The North Atlantic', 'Golden Age of the North'],
+    trait: { kind: 'longships', name: 'Longships', text: 'Plunder: when your Raiders get through, they also carry off 1 Prosperity.' },
+    signature: { name: 'Summer Raid', cost: 3, text: 'The rival loses 2 Progress. You gain 2 Prosperity.', effects: [{ op: 'gain', res: 'progress', amount: -2, who: 'opp' }, { op: 'gain', res: 'prosperity', amount: 2 }] },
+    decks: decksFor('norse'),
   },
 ];

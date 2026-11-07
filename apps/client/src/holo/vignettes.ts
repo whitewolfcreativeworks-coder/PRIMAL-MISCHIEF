@@ -627,7 +627,7 @@ export function ageUpScene(civ: CivId, age: number, ageName: string, mine: boole
       s.dissolve(before, seg(t, 1.0, 1.5));
       if (t > 1.2) s.once('ring', () => { s.burst([0, 0.05, 0], GOLD, 160, { speed: 1.3, gravity: 0.1, ttl: 1.4, size: 0.03 }); s.burst([0, 0.6, 0], color, 80, { speed: 0.8, gravity: 0.6, ttl: 1.2 }); });
       s.reveal(after, seg(t, 1.25, 2.8, false));
-      if (t > 2.2) s.once('lbl', () => s.label(`Age ${ROMAN[age - 1]}`, [0, 0.8, 0], '#f3dfa6', 1.6, 0.46));
+      if (t > 2.2) s.once('lbl', () => s.label(`Age ${ROMAN[age - 1]}`, [0, 0.62, 0], '#f3dfa6', 1.6, 0.46));
       s.fadeAll(seg(t, 3.6, 4.0));
     },
   };

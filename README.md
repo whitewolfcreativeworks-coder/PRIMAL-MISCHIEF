@@ -8,7 +8,7 @@ choose, blind, how many cards to draw from your **Civilization** deck (growth)
 and your **Military** deck (armies, forts, tactics, reactions). Grow through
 five Ages to a Golden Age, or cross the river and break your rival’s city.
 
-- 5 civilizations, each with two decks across five Ages: **Kush, Aksum, Carthage, Sumer, Inca**
+- 6 civilizations, each with two decks across five Ages: **Kush, Aksum, Carthage, Sumer, Inca, Norse**
 - Riverbank cities that visibly grow with each Age
 - Hologram battles over the river: every card you play is acted out
 - Reactions on your rival’s turn: ambush, retreat, turn the tide, treaty, foil, mirror

@@ -912,6 +912,238 @@ function stake(c: Ctx, x: number, base: number, w: number, h: number) {
   );
 }
 
+/* ------------------------------------------------------------------------ */
+/* Norse props                                                                */
+/* ------------------------------------------------------------------------ */
+
+/** Clinker hull outline facing right, keel at y ≈ 0: half-length L, gunwale height G, stem-post height T. */
+function hullD(L: number, G: number, T: number) {
+  return (
+    `M${-L + 2},${-T} Q${-L + 5},${-G - 3} ${-L + 16},${-G} L${L - 16},${-G} Q${L - 5},${-G - 3} ${L},${-T - 2} ` +
+    `Q${L + 4},${-T - 3} ${L + 3},${-T + 1} Q${L - 1},${r2(-G * 0.2)} ${L - 16},-1 Q0,3 ${-L + 16},-1 ` +
+    `Q${-L + 1},${r2(-G * 0.2)} ${-L - 1},${-T + 3} Q${-L - 2},${-T - 1} ${-L + 2},${-T} Z`
+  );
+}
+
+/**
+ * Viking-age ship, side-on, facing right, waterline at y (longship ~110 units long).
+ * `knarr` gives the shorter, deeper-hulled cargo ship. Plain scrolled stem posts: no figureheads.
+ */
+function longship(
+  c: Ctx,
+  x: number,
+  y: number,
+  s: number,
+  o: { sail?: 'set' | 'furled' | 'none'; shields?: boolean; oars?: number; rot?: number; fill?: string; knarr?: boolean; flip?: boolean } = {},
+) {
+  const f = o.fill ?? c.dark;
+  const L = o.knarr ? 40 : 52;
+  const G = o.knarr ? 16 : 12;
+  const T = o.knarr ? 30 : 31;
+  const sail = o.sail ?? 'set';
+  const mh = o.knarr ? 60 : 64;
+  let oars = '';
+  if (o.oars) for (let i = -L + 20; i <= L - 20; i += 6) oars += `M${i},${-G + 3} L${r2(i - o.oars * 0.5)},${o.oars} `;
+  const shields: ReactNode[] = [];
+  if (o.shields) {
+    for (let i = -L + 19, k = 0; i <= L - 19; i += 6.4, k++) {
+      shields.push(<circle key={i} cx={r2(i)} cy={-G - 0.4} r={3.1} fill={k % 2 ? c.u('lit') : c.mid} stroke={f} strokeWidth={0.7} />);
+    }
+  }
+  const sy0 = -mh + 5;
+  const sy1 = -G - 10;
+  const band = (x0: number, x1: number) => `M${x0},${sy0} L${x1},${sy0} L${x1},${sy1} L${x0},${sy1} Z`;
+  const strakes = `M${-L + 4},${-T + 8} Q${-L + 8},${r2(-G * 0.5)} ${-L + 22},${r2(-G * 0.52)} L${L - 22},${r2(-G * 0.52)} Q${L - 8},${r2(-G * 0.5)} ${L - 2},${-T + 6} M${-L + 14},${r2(-G * 0.12)} Q0,2 ${L - 14},${r2(-G * 0.12)}`;
+  const curls = `M${L + 1},${-T - 2.4} q2.6,-4.6 -1.4,-5.6 q-2.4,0 -1.4,2.4 M${-L + 2},${-T} q-2.6,-4.4 1.4,-5.4 q2.4,0 1.4,2.4`;
+  return (
+    <g transform={`translate(${r2(x)} ${r2(y)}) rotate(${o.rot ?? 0}) scale(${o.flip ? -s : s} ${s})`}>
+      {oars && <path d={oars} {...dk(c, 1.1, f)} />}
+      {sail !== 'none' && <path d={`M0,${-G} V${-mh}`} {...dk(c, 1.6, f)} />}
+      {sail === 'set' && (
+        <g>
+          <path d={`M0,${-mh} L${-L + 2},${-T} M0,${-mh} L${L},${-T - 2}`} {...ln(c, 0.5, 0.4)} stroke={f} />
+          <path d={`M-25,${-mh + 4} H25`} {...dk(c, 1.4, f)} />
+          <path d={`M-23,${sy0} L23,${sy0} Q26.5,${r2((sy0 + sy1) / 2)} 22,${sy1} L-22,${sy1} Q-26.5,${r2((sy0 + sy1) / 2)} -23,${sy0} Z`} fill={c.u('lit')} />
+          <path d={`${band(-15, -9)} ${band(-3, 3)} ${band(9, 15)}`} fill={mix(c.p.primary, c.p.ink, 0.2)} opacity={0.72} />
+          <path d={`M-22,${sy1} L22,${sy1}`} {...dk(c, 0.8, f)} />
+        </g>
+      )}
+      {sail === 'furled' && (
+        <g>
+          <path d={`M-22,${-mh + 18} H22`} {...dk(c, 3.6, c.mid)} />
+          <path d={`M-22,${-mh + 18} H22`} {...ln(c, 0.6, 0.6)} />
+        </g>
+      )}
+      <path d={hullD(L, G, T)} fill={f} />
+      <path d={strakes} {...ln(c, 0.7, 0.5)} />
+      {shields}
+      <path d={curls} {...dk(c, 1.3, f)} />
+    </g>
+  );
+}
+
+/** Rounded conical helmet with a nasal guard over an actor's head. */
+function helm(c: Ctx, head: Pt, s: number, flip = false) {
+  const k = flip ? -1 : 1;
+  const [hx, hy] = head;
+  return (
+    <g>
+      <path
+        d={`M${r2(hx - 3.1 * s)},${r2(hy + 0.6 * s)} Q${r2(hx - 3 * s)},${r2(hy - 2.8 * s)} ${r2(hx)},${r2(hy - 4.8 * s)} Q${r2(hx + 3 * s)},${r2(hy - 2.8 * s)} ${r2(hx + 3.1 * s)},${r2(hy + 0.6 * s)} Z`}
+        fill={c.u('lit')}
+        stroke={c.dark}
+        strokeWidth={r2(0.4 * s)}
+      />
+      <path d={`M${r2(hx + k * 2.3 * s)},${r2(hy)} v${r2(2.6 * s)}`} {...dk(c, 0.9 * s, c.p.accent)} />
+    </g>
+  );
+}
+
+/** Long two-handed axe held through two hands; the bearded blade faces `side` (1 = clockwise of the shaft). */
+function daneAxe(c: Ctx, back: Pt, front: Pt, s: number, behind = 10, ahead = 10, side = 1) {
+  const dx = front[0] - back[0];
+  const dy = front[1] - back[1];
+  const L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L;
+  const uy = dy / L;
+  const nx = -uy * side;
+  const ny = ux * side;
+  const a: Pt = [back[0] - ux * behind, back[1] - uy * behind];
+  const t: Pt = [front[0] + ux * ahead, front[1] + uy * ahead];
+  const P = (al: number, ac: number): Pt => [t[0] + (ux * al + nx * ac) * s, t[1] + (uy * al + ny * ac) * s];
+  const blade = `M${P2(P(2.6, 0.8))} Q${P2(P(5, 3.2))} ${P2(P(5.8, 7))} Q${P2(P(1, 9))} ${P2(P(-5.4, 6.6))} Q${P2(P(-2, 3.4))} ${P2(P(-1.6, 0.8))} Z`;
+  return (
+    <g>
+      <path d={line([a, P(3, 0)])} {...dk(c, 1.3 * s)} />
+      <path d={blade} fill={c.u('litH')} stroke={c.dark} strokeWidth={r2(0.5 * s)} />
+      <path d={`M${P2(P(5.8, 7))} Q${P2(P(1, 9))} ${P2(P(-5.4, 6.6))}`} {...ln(c, 0.7 * s, 0.95)} />
+    </g>
+  );
+}
+
+/** A split, dried fish (stockfish) pointing along `rot` degrees, centre (x, y). */
+function fish(c: Ctx, x: number, y: number, s: number, rot = 0) {
+  return (
+    <g transform={`translate(${r2(x)} ${r2(y)}) rotate(${rot}) scale(${s})`}>
+      <path d="M-6,0 Q-1,-3.2 5.4,0 Q-1,3.2 -6,0 Z M-5.4,0 L-9,-2.8 L-8.2,0 L-9,2.8 Z" fill={c.u('lit')} stroke={c.dark} strokeWidth={0.45} />
+      <circle cx={3.2} cy={-0.4} r={0.5} fill={c.dark} />
+    </g>
+  );
+}
+
+/** A-frame drying rack (hjell) hung with paired stockfish; (x, base) is the foot of the left frame. */
+function fishRack(c: Ctx, x: number, base: number, w: number, h: number, seed = 1) {
+  const R = rng(seed);
+  const top = base - h;
+  const low = base - h * 0.52;
+  let fishes = '';
+  for (const py of [top, low]) {
+    for (let fx = x + 3; fx < x + w - 2; fx += 3.4) {
+      const len = h * (0.24 + R() * 0.08);
+      const jx = (R() - 0.5) * 0.8;
+      fishes += `M${r2(fx - 0.7)},${r2(py + 0.4)} L${r2(fx + 0.7)},${r2(py + 0.4)} L${r2(fx + 1.2 + jx)},${r2(py + len)} L${r2(fx + 0.2 + jx)},${r2(py + len + 2.2)} L${r2(fx - 1 + jx)},${r2(py + len)} Z `;
+    }
+  }
+  return (
+    <g>
+      <path d={`M${x - 4},${base} L${x},${top - 2} L${x + 4},${base} M${x + w - 4},${base} L${x + w},${top - 2} L${x + w + 4},${base}`} {...dk(c, 1.4)} />
+      <path d={fishes} fill={c.u('lit')} stroke={c.dark} strokeWidth={0.35} />
+      <path d={`M${x - 3},${top} H${x + w + 3} M${x - 2},${low} H${x + w + 2}`} {...dk(c, 1.2)} />
+    </g>
+  );
+}
+
+/** Timber longhouse in side view: bowed long wall, hip-ended curved roof; (x, base) bottom-left. */
+function longhouse(
+  c: Ctx,
+  x: number,
+  base: number,
+  w: number,
+  wallH: number,
+  roofH: number,
+  o: { posts?: boolean; door?: number; glow?: boolean } = {},
+) {
+  const bow = Math.min(5, w * 0.035);
+  const e0 = base - wallH;
+  const ctrl = e0 - bow * 2;
+  const eaveY = (xx: number) => {
+    const t = (xx - x) / w;
+    return (1 - t) * (1 - t) * e0 + 2 * t * (1 - t) * ctrl + t * t * e0;
+  };
+  const rl = x - 4;
+  const rr = x + w + 4;
+  const peak = e0 - roofH;
+  const cy = (peak - 0.25 * (e0 + 1)) / 0.75;
+  const roofTop = `M${r2(rl)},${r2(e0 + 1)} C${r2(x + w * 0.1)},${r2(cy)} ${r2(x + w * 0.9)},${r2(cy)} ${r2(rr)},${r2(e0 + 1)}`;
+  const roof = `${roofTop} Q${r2(x + w / 2)},${r2(ctrl + 1)} ${r2(rl)},${r2(e0 + 1)} Z`;
+  let rows = '';
+  for (const t of [0.3, 0.55, 0.78]) {
+    const yy = e0 + 1 - (e0 + 1 - peak) * t;
+    const span = Math.sqrt(1 - t) * 0.96;
+    const xl = x + w / 2 - (w / 2 + 4) * span;
+    const xr = x + w / 2 + (w / 2 + 4) * span;
+    rows += `M${r2(xl)},${r2(yy + 1.6)} Q${r2(x + w / 2)},${r2(yy - bow)} ${r2(xr)},${r2(yy + 1.6)} `;
+  }
+  let planks = '';
+  for (let px = x + 4; px < x + w - 2; px += 4) planks += `M${r2(px)},${r2(base)} V${r2(eaveY(px) + 1)} `;
+  let posts = '';
+  if (o.posts) for (let px = x + 6; px < x + w - 4; px += 11) posts += `M${r2(px - wallH * 0.32)},${r2(base)} L${r2(px)},${r2(eaveY(px) + 1.5)} `;
+  const dx = o.door ?? x + w / 2;
+  const dw = Math.max(4, wallH * 0.36);
+  const dh = wallH * 0.7;
+  return (
+    <g>
+      <path d={`M${r2(x)},${r2(base)} V${r2(e0)} Q${r2(x + w / 2)},${r2(ctrl)} ${r2(x + w)},${r2(e0)} V${r2(base)} Z`} fill={c.u('lit')} />
+      <path d={`M${r2(x + w * 0.74)},${r2(base)} V${r2(eaveY(x + w * 0.74))} Q${r2(x + w * 0.88)},${r2(e0 - bow * 0.6)} ${r2(x + w)},${r2(e0)} V${r2(base)} Z`} fill={c.u('shade')} opacity={0.55} />
+      <path d={planks} {...ln(c, 0.4, 0.35)} stroke={c.dark} />
+      {o.glow && <ellipse cx={r2(dx)} cy={r2(base - dh * 0.4)} rx={dw * 3} ry={dh * 0.9} fill={c.u('glow')} />}
+      <path d={`M${r2(dx - dw / 2)},${r2(base)} V${r2(base - dh + dw / 2)} A${r2(dw / 2)},${r2(dw / 2)} 0 0 1 ${r2(dx + dw / 2)},${r2(base - dh + dw / 2)} V${r2(base)} Z`} fill={o.glow ? mix(c.p.accent, '#ffffff', 0.2) : c.deep} opacity={o.glow ? 0.92 : 1} />
+      <path d={roof} fill={c.mid} />
+      <path d={`M${r2(x + w * 0.62)},${r2(peak + 1)} C${r2(x + w * 0.8)},${r2(peak + 0.5)} ${r2(x + w * 0.9)},${r2(cy + 4)} ${r2(rr)},${r2(e0 + 1)} Q${r2(x + w * 0.8)},${r2(ctrl + 0.6)} ${r2(x + w * 0.62)},${r2(ctrl + 2)} Z`} fill={c.deep} opacity={0.3} />
+      <path d={rows} {...ln(c, 0.5, 0.4)} />
+      <path d={roofTop} {...ln(c, 0.8, 0.65)} />
+      {posts && <path d={posts} {...dk(c, 1.6)} />}
+    </g>
+  );
+}
+
+/** Rough standing stone; (x, base) bottom centre. */
+function standingStone(c: Ctx, x: number, base: number, w: number, h: number) {
+  const body = `M${r2(x - w / 2)},${r2(base)} L${r2(x - w * 0.42)},${r2(base - h + w * 0.5)} Q${r2(x - w * 0.1)},${r2(base - h - w * 0.15)} ${r2(x + w * 0.44)},${r2(base - h + w * 0.35)} L${r2(x + w / 2)},${r2(base)} Z`;
+  return (
+    <g>
+      <path d={body} fill={c.mid} />
+      <path d={body} fill={c.u('lit')} opacity={0.5} />
+      <path d={`M${r2(x - w * 0.42)},${r2(base - h + w * 0.5)} Q${r2(x - w * 0.1)},${r2(base - h - w * 0.15)} ${r2(x + w * 0.44)},${r2(base - h + w * 0.35)}`} {...ln(c, 0.6, 0.7)} />
+      <path d={`M${r2(x + w * 0.12)},${r2(base)} L${r2(x + w * 0.16)},${r2(base - h + w * 0.2)} Q${r2(x + w * 0.34)},${r2(base - h + w * 0.2)} ${r2(x + w * 0.44)},${r2(base - h + w * 0.35)} L${r2(x + w / 2)},${r2(base)} Z`} fill={c.u('shade')} opacity={0.75} />
+    </g>
+  );
+}
+
+/** Wooden barrel, base centre (x, y). */
+function barrel(c: Ctx, x: number, y: number, s = 1) {
+  return (
+    <g transform={`translate(${r2(x)} ${r2(y)}) scale(${s})`}>
+      <path d="M-4,0 Q-5.4,-5 -4,-10 L4,-10 Q5.4,-5 4,0 Z" fill={c.u('lit')} stroke={c.dark} strokeWidth={0.5} />
+      <path d="M-4.7,-2.6 H4.7 M-4.7,-7.4 H4.7" {...dk(c, 0.8)} />
+    </g>
+  );
+}
+
+/** Round shield with a painted division (0 plain, 1 halved, 2 quartered), face-on. */
+function paintedShield(c: Ctx, x: number, y: number, r: number, kind = 0) {
+  const paint = kind === 1 ? `M${r2(x)},${r2(y - r)} A${r},${r} 0 0 1 ${r2(x)},${r2(y + r)} Z` : kind === 2 ? `M${r2(x)},${r2(y)} V${r2(y - r)} A${r},${r} 0 0 1 ${r2(x + r)},${r2(y)} Z M${r2(x)},${r2(y)} V${r2(y + r)} A${r},${r} 0 0 1 ${r2(x - r)},${r2(y)} Z` : '';
+  return (
+    <g>
+      <circle cx={r2(x)} cy={r2(y)} r={r} fill={c.u('lit')} />
+      {paint && <path d={paint} fill={mix(c.p.primary, c.p.ink, 0.15)} opacity={0.8} />}
+      <circle cx={r2(x)} cy={r2(y)} r={r} fill="none" stroke={c.dark} strokeWidth={r2(Math.max(0.8, r * 0.09))} />
+      <circle cx={r2(x)} cy={r2(y)} r={r2(r * 0.24)} fill={c.mid} stroke={c.dark} strokeWidth={0.5} />
+      <circle cx={r2(x - r * 0.06)} cy={r2(y - r * 0.08)} r={r2(r * 0.1)} fill={c.p.accent} opacity={0.8} />
+    </g>
+  );
+}
+
 const MOTIFS: Record<string, Draw> = {
   /* ---------------------------------- Common ---------------------------------- */
 
@@ -3513,6 +3745,463 @@ const MOTIFS: Record<string, Draw> = {
       </>
     );
   },
+
+  /* ---------------------------------- Norse ----------------------------------- */
+
+  /** Fishing Grounds: a fisher hauls a cod into the boat; split fish are hung in pairs on the drying racks. */
+  fishing: (c) => {
+    const fisher = act(c, 34, 103, 0.82, POSE.pull);
+    const [fx, fy] = fisher.hand[1];
+    const hanger = act(c, 138, 127, 1.25, { lean: -8, arms: [[[3, -5], [8, -10]], [[2, -5], [7, -11]]], legs: [[[-4, 10]], [[3, 10]]] });
+    const [hx, hy] = hanger.hand[0];
+    return (
+      <>
+        {sun(c, 100, 66, 7)}
+        <polygon points="-5,14 14,18 40,52 62,78 76,86 -5,86" fill={c.u('shade')} />
+        <polygon points="205,4 186,10 162,46 140,74 124,86 205,86" fill={c.u('shade')} />
+        <path d="M14,18 L40,52 L62,78 M186,10 L162,46 L140,74" {...ln(c, 0.7, 0.4)} />
+        <path d="M22,38 l6,14 M30,30 l4,18 M178,28 l-4,14 M170,42 l-5,12" {...ln(c, 0.5, 0.3)} />
+        <polygon points="50,86 74,74 98,79 120,72 148,86" fill={c.u('shade')} opacity={0.5} />
+        <rect x={0} y={84} width={200} height={46} fill={c.u('water')} />
+        <path d="M80,90 h40 M64,96 h20 M92,99 h18 M6,118 h24 M40,125 h30" {...ln(c, 0.6, 0.4)} />
+        <path d="M58,62 q3,-3 6,0 q3,-3 6,0 M76,54 q2,-2 4,0 q2,-2 4,0 M118,58 q2,-2 4,0 q2,-2 4,0" {...dk(c, 0.8)} />
+        <polygon points="86,131 98,116 116,106 150,100 205,97 205,131" fill={c.u('ground')} />
+        <path d="M98,116 L116,106 L150,100 L205,97" {...ln(c, 0.7, 0.5)} />
+        {fishRack(c, 116, 106, 40, 24, 3)}
+        {fisher.node}
+        {longship(c, 40, 108, 0.42, { sail: 'none' })}
+        <path d={`M${r2(fx)},${r2(fy)} Q${r2(fx + 14)},${r2(fy + 4)} 66,99`} {...ln(c, 0.6, 0.9)} />
+        {fish(c, 70, 101, 1.4, -140)}
+        <path d="M66,112 q4,-6 9,-3 M74,113 q5,-4 9,0 M62,110 q-2,-5 2,-8" {...ln(c, 0.9, 0.85)} />
+        {sparks(c, 72, 104, 8, 5, 6, 8, 1.3)}
+        {fishRack(c, 150, 120, 46, 38, 7)}
+        {hanger.node}
+        <path d={`M${r2(hx - 2)},${r2(hy)} H${r2(hx + 5)}`} {...dk(c, 0.8)} />
+        {fish(c, hx - 1, hy + 9, 1.1, 92)}
+        {fish(c, hx + 4, hy + 9, 1.1, 88)}
+        <path d="M108,128 l2,-9 h16 l2,9 Z" fill={c.mid} stroke={c.dark} strokeWidth={0.6} />
+        <path d="M109,123 h18" {...ln(c, 0.5, 0.5)} />
+        {fish(c, 114, 118, 0.9, -70)}
+        {fish(c, 120, 118, 0.9, -110)}
+      </>
+    );
+  },
+
+  /** Hedeby Market: porters unload a moored knarr along the jetty; a merchant weighs silver on folding scales. */
+  norseMarket: (c) => {
+    const lift: Pose = { lean: -4, arms: [[[3, -5], [7, -10]], [[2, -5], [6, -10]]] };
+    const loader = act(c, 150, 94, 0.95, lift, { flip: true });
+    const p1 = act(c, 114, 104, 1.05, POSE.carry, { flip: true });
+    const p2 = act(c, 90, 104, 1.0, { ...POSE.carry, lean: 6 }, { flip: true });
+    const merchant = act(c, 42, 104, 1.1, { robe: true, arms: [[[5, -1], [10, -3]], [[-1, 6], [0, 10]]] });
+    const [mx, my] = merchant.hand[0];
+    let posts = '';
+    for (let x = 36; x < 186; x += 12) posts += `M${x},107 V118 `;
+    let posts2 = '';
+    for (let x = 46; x < 96; x += 10) posts2 += `M${x},87.6 V94 `;
+    return (
+      <>
+        {sun(c, 166, 32, 7)}
+        <polygon points="-5,66 30,60 70,63 110,57 150,61 205,58 205,68 -5,68" fill={c.u('shade')} opacity={0.65} />
+        <path d="M112,61 q7,-6 14,0 Z M130,61 q5,-4.4 10,0 Z M146,61 q6,-5 12,0 Z M164,60 q5,-4 10,0 Z" fill={c.u('shade')} />
+        <rect x={0} y={66} width={200} height={64} fill={c.u('water')} />
+        <path d="M80,72 h24 M120,76 h30 M150,70 h20 M8,98 h20 M100,122 h30 M150,126 h30" {...ln(c, 0.6, 0.4)} />
+        {longship(c, 70, 78, 0.2, { knarr: true })}
+        <polygon points="-5,131 -5,80 22,78 42,86 54,104 52,131" fill={c.u('ground')} />
+        {longhouse(c, -10, 86, 46, 8, 12)}
+        <rect x={40} y={85.6} width={58} height={2} fill={c.u('lit')} />
+        <path d={posts2} {...dk(c, 0.9)} />
+        {longship(c, 140, 99, 0.9, { knarr: true, sail: 'furled' })}
+        {loader.node}
+        <g transform={`rotate(-12 ${r2(loader.hand[0][0])} ${r2(loader.hand[0][1])})`}>{barrel(c, loader.hand[0][0] - 1, loader.hand[0][1] + 2, 0.9)}</g>
+        {barrel(c, 122, 86, 0.8)}
+        {sack(c, 130, 86, 0.8)}
+        {barrel(c, 160, 86, 0.75)}
+        <path d="M176,72 Q180,90 184,106" {...ln(c, 0.6, 0.6)} stroke={c.dark} />
+        <rect x={30} y={104} width={158} height={3} fill={c.u('lit')} />
+        <rect x={30} y={107} width={158} height={2} fill={c.dark} />
+        <path d={posts} {...dk(c, 1.2)} />
+        <path d="M30,104 H188" {...ln(c, 0.6, 0.6)} />
+        {barrel(c, 66, 104, 0.85)}
+        {barrel(c, 74, 104, 0.85)}
+        {barrel(c, 70, 95.6, 0.85)}
+        {p2.node}
+        {sack(c, p2.head[0] - 1, p2.head[1] - 2, 0.85)}
+        {p1.node}
+        {sack(c, p1.head[0] - 1, p1.head[1] - 2, 0.9)}
+        {speed(c, 124, 92, [8, 12], 4, 1)}
+        {merchant.node}
+        <path d={`M${r2(mx)},${r2(my)} v-3 M${r2(mx - 7)},${r2(my - 3)} H${r2(mx + 7)} M${r2(mx - 7)},${r2(my - 3)} l-2,7 M${r2(mx - 7)},${r2(my - 3)} l2,7 M${r2(mx + 7)},${r2(my - 3)} l-2,6 M${r2(mx + 7)},${r2(my - 3)} l2,6`} {...dk(c, 0.6)} />
+        <path d={`M${r2(mx - 10)},${r2(my + 4)} q3,2.4 6,0 Z M${r2(mx + 4)},${r2(my + 3)} q3,2.4 6,0 Z`} fill={c.p.accent} />
+        {sparks(c, mx - 7, my + 1, 4, 2, 3, 41, 1.3)}
+      </>
+    );
+  },
+
+  /** The Thing: free men gather within the stone ring; the law-speaker addresses them from the mound, spears raised in assent. */
+  thing: (c) => {
+    const cx = 100;
+    const cy = 106;
+    const N = 16;
+    const stones = Array.from({ length: N }, (_, i) => {
+      const a = (i / N) * Math.PI * 2 + 0.1;
+      const k = 0.62 + 0.38 * ((Math.sin(a) + 1) / 2);
+      return { x: cx + Math.cos(a) * 88, y: cy + Math.sin(a) * 16, k, front: Math.sin(a) > 0.05 };
+    });
+    const R = rng(29);
+    const ring = (y0: number, n: number, s: number, rx: number, seed: number) => {
+      const Rr = rng(seed);
+      return Array.from({ length: n }, (_, i) => {
+        const x = cx - rx + ((i + 0.5) / n) * rx * 2 + (Rr() - 0.5) * 4;
+        if (Math.abs(x - cx) < 30) return null;
+        const up = Rr() < 0.4;
+        const y = y0 + (Rr() - 0.5) * 2;
+        return (
+          <g key={i}>
+            {up && spear(c, x + 5.6 * s - 1, y - 20 * s, x + 5.6 * s + 1.4, y - 40 * s, 0.7)}
+            {tinyFig(c, x, y, s, up)}
+          </g>
+        );
+      });
+    };
+    const speaker = act(c, cx, 92, 1.05, { arms: [[[-3, 6], [-3.5, 10]], [[4, -5], [7, -11]]] });
+    const [sx, sy] = speaker.head;
+    const fg = [[16, 134, 1.45, true], [44, 132, 1.35, false], [158, 132, 1.35, true], [188, 134, 1.45, false]] as const;
+    return (
+      <>
+        {sun(c, 40, 38, 7)}
+        {hills(c, 92, 9, 61, 0.5)}
+        {ground(c, 92)}
+        <ellipse cx={cx} cy={cy} rx={92} ry={20} fill={c.u('lit')} opacity={0.12} />
+        {stones.filter((s) => !s.front).map((s, i) => (
+          <g key={`b${i}`}>{standingStone(c, s.x, s.y, 7 * s.k, 18 * s.k + R() * 4)}</g>
+        ))}
+        {ring(99, 18, 0.42, 72, 3)}
+        <circle cx={cx} cy={78} r={30} fill={c.u('glow')} />
+        <path d={`M${cx - 32},103 Q${cx},84 ${cx + 32},103 Z`} fill={c.mid} />
+        <path d={`M${cx - 32},103 Q${cx},84 ${cx + 32},103 Z`} fill={c.u('lit')} opacity={0.45} />
+        <path d={`M${cx - 32},103 Q${cx},84 ${cx + 32},103`} {...ln(c, 0.8, 0.6)} />
+        <path d={`M${cx + 6},92 Q${cx + 22},94 ${cx + 30},103 L${cx + 32},103 Q${cx},84 ${cx + 6},92 Z`} fill={c.u('shade')} opacity={0.5} />
+        <path d={`M${cx - 22},99 q4,-2 8,0 M${cx + 10},98 q4,-2 8,0`} {...ln(c, 0.5, 0.45)} stroke={c.dark} />
+        {speaker.node}
+        <path d={`M${r2(sx + 7)},${r2(sy - 3)} q3,3 0,6 M${r2(sx + 10.5)},${r2(sy - 5)} q4.6,5 0,10 M${r2(sx - 7)},${r2(sy - 3)} q-3,3 0,6`} {...ln(c, 0.8, 0.8)} />
+        {ring(112, 16, 0.55, 82, 9)}
+        {stones.filter((s) => s.front).map((s, i) => (
+          <g key={`f${i}`}>{standingStone(c, s.x, s.y + 2, 7 * s.k, 18 * s.k + R() * 4)}</g>
+        ))}
+        {fg.map(([x, y, s, up]) => {
+          const f = act(c, x, y, s, up ? { arms: [[[-2, 6], [-2.5, 10]], [[3, -5], [4, -11]]] } : POSE.stand);
+          return (
+            <g key={x}>
+              {f.node}
+              {up ? spear(c, f.hand[1][0] - 1, f.hand[1][1] + 12, f.hand[1][0] + 1, f.hand[1][1] - 12, 1) : spear(c, x + 5 * s, y, x + 6 * s, y - 40 * s, 1)}
+            </g>
+          );
+        })}
+        {sparks(c, 100, 50, 60, 6, 6, 77, 1.2)}
+      </>
+    );
+  },
+
+  /** Trelleborg: the circular rampart from above, axial streets through four gates, halls in square courts; a column marches in. */
+  ringfort: (c) => {
+    const cx = 100;
+    const cy = 74;
+    const k = 0.52;
+    const P = (u: number, v: number): Pt => [cx + u, cy + v * k];
+    const hallPlan = (u: number, v: number, along: 'u' | 'v', key: string) => {
+      const len = 13;
+      const wid = 3.6;
+      const tip = (t: number): Pt => (along === 'u' ? P(u + t, v) : P(u, v + t));
+      const side = (t: number, sgn: number): Pt => (along === 'u' ? P(u + t, v + sgn * wid * 2) : P(u + sgn * wid * 2, v + t));
+      const a = tip(-len);
+      const b = tip(len);
+      const l1 = side(0, -1);
+      const l2 = side(0, 1);
+      const lift = (p: Pt, h: number): Pt => [p[0], p[1] - h];
+      const H0 = 3.2;
+      const roof = `M${P2(lift(a, H0))} Q${P2(lift(l1, H0 + 1.6))} ${P2(lift(b, H0))} Q${P2(lift(l2, H0 + 1.6))} ${P2(lift(a, H0))} Z`;
+      const lo = along === 'u' ? l2 : (u > 0 ? l1 : l2);
+      const wall = `M${P2(a)} Q${P2(lo)} ${P2(b)} L${P2(lift(b, H0))} Q${P2(lift(lo, H0))} ${P2(lift(a, H0))} Z`;
+      const shadow = `M${P2(a)} Q${P2(l1)} ${P2(b)} Q${P2(l2)} ${P2(a)} Z`;
+      const ridge = along === 'u' ? `M${P2(lift(a, H0))} Q${P2(lift(P(u, v), H0 + 1.4))} ${P2(lift(b, H0))}` : `M${P2(lift(a, H0))} L${P2(lift(b, H0))}`;
+      return (
+        <g key={key}>
+          <path d={shadow} fill={c.deep} opacity={0.6} transform="translate(1.6 0.8)" />
+          <path d={wall} fill={c.u('shade')} stroke={c.deep} strokeWidth={0.3} />
+          <path d={roof} fill={c.u('lit')} stroke={c.dark} strokeWidth={0.45} />
+          <path d={ridge} {...dk(c, 0.7, c.mid)} />
+        </g>
+      );
+    };
+    const quad = (su: number, sv: number) => {
+      const qu = su * 38;
+      const qv = sv * 38;
+      return [
+        hallPlan(qu, qv - 11, 'u', `${su}${sv}a`),
+        hallPlan(qu - 14, qv, 'v', `${su}${sv}b`),
+        hallPlan(qu + 14, qv, 'v', `${su}${sv}c`),
+        hallPlan(qu, qv + 11, 'u', `${su}${sv}d`),
+      ];
+    };
+    let stakes = '';
+    for (let i = 0; i < 90; i++) {
+      const a = (i / 90) * Math.PI * 2;
+      if (Math.abs(Math.cos(a)) < 0.05 || Math.abs(Math.sin(a)) < 0.05) continue;
+      const [x, y] = P(Math.cos(a) * 82, Math.sin(a) * 82);
+      stakes += `M${r2(x)},${r2(y)} v-2.2 `;
+    }
+    const col = Array.from({ length: 6 }, (_, i) => (
+      <g key={i}>{tinyFig(c, 97 + (i % 2) * 6, 132 - i * 4.4, 0.5 - i * 0.03)}</g>
+    ));
+    return (
+      <>
+        {sun(c, 176, 9, 5)}
+        {hills(c, 20, 5, 13, 0.5)}
+        {ground(c, 18)}
+        <ellipse cx={cx} cy={cy + 5} rx={98} ry={r2(98 * k + 2)} fill={c.u('water')} opacity={0.8} />
+        <ellipse cx={cx} cy={cy + 5} rx={98} ry={r2(98 * k + 2)} {...ln(c, 0.6, 0.45)} />
+        <ellipse cx={cx} cy={cy + 6} rx={90} ry={r2(90 * k + 1)} fill={c.u('shade')} />
+        <ellipse cx={cx} cy={cy} rx={90} ry={r2(90 * k)} fill={c.u('lit')} opacity={0.9} />
+        <ellipse cx={cx} cy={cy + 1} rx={76} ry={r2(76 * k)} fill={c.u('shade')} />
+        <ellipse cx={cx} cy={cy + 3} rx={74} ry={r2(74 * k)} fill={mix(c.dark, c.mid, 0.45)} />
+        <path d={stakes} {...dk(c, 0.9)} />
+        <path d={`M${cx - 92},${cy + 2} H${cx + 92} M${cx},${r2(cy - 92 * k)} V${r2(cy + 92 * k + 4)}`} {...dk(c, 4.2, mix(c.mid, c.p.accent, 0.3))} />
+        <path d={`M${cx - 92},${cy + 2} H${cx + 92} M${cx},${r2(cy - 92 * k)} V${r2(cy + 92 * k + 4)}`} {...ln(c, 0.5, 0.5)} stroke={c.dark} strokeDasharray="1.2 1.6" />
+        {[P(0, -84), P(-84, 0), P(84, 0)].map(([x, y], i) => (
+          <rect key={i} x={r2(x - 3.6)} y={r2(y - 5)} width={7.2} height={5} fill={c.u('lit')} stroke={c.dark} strokeWidth={0.5} />
+        ))}
+        {quad(-1, -1)}
+        {quad(1, -1)}
+        {[[-20, -40], [44, -26], [-52, 30], [28, 44]].map(([u, v], i) => {
+          const [x, y] = P(u, v);
+          return <g key={i}>{smoke(c, x, y - 3, 14, 2.4, 0.3)}</g>;
+        })}
+        {quad(-1, 1)}
+        {quad(1, 1)}
+        {(() => {
+          const [x, y] = P(0, 84);
+          return (
+            <g>
+              <rect x={r2(x - 4.4)} y={r2(y - 7)} width={8.8} height={8} fill={c.u('lit')} stroke={c.dark} strokeWidth={0.6} />
+              <rect x={r2(x - 2)} y={r2(y - 4)} width={4} height={5} fill={c.deep} />
+              {banner(c, x + 6, y - 2, 18, 7)}
+            </g>
+          );
+        })()}
+        {col}
+        {trail(c, [112, 128], [114, 118], [108, 112], { dash: '2 2', op: 0.6, head: 2.2 })}
+      </>
+    );
+  },
+
+  /** Hall of the Sea Kings: the great bow-walled hall at dusk, firelight spilling from the door, smoke from the roof. */
+  hall: (c) => {
+    const torch = act(c, 34, 126, 1.2, { ...POSE.walk, arms: [[[3, -4], [5, -10]], [[-3, 5.5], [-4.5, 9.5]]] });
+    const [tx, ty] = torch.hand[0];
+    const guest = act(c, 62, 120, 1.0, POSE.walk);
+    return (
+      <>
+        {night(c, 0.4, true)}
+        <ellipse cx={100} cy={100} rx={130} ry={34} fill={c.u('glow')} opacity={0.7} />
+        {sun(c, 178, 97, 6)}
+        {hills(c, 98, 8, 37, 0.65)}
+        {ground(c, 100)}
+        {longhouse(c, 150, 104, 40, 8, 10)}
+        {smoke(c, 168, 88, 22, 3, 0.3)}
+        {smoke(c, 94, 64, 46, 5, 0.42)}
+        {smoke(c, 70, 66, 34, 4, 0.3)}
+        {longhouse(c, 16, 114, 150, 20, 32, { posts: true, door: 100, glow: true })}
+        <polygon points="94,114 106,114 124,131 76,131" fill={c.p.accent} opacity={0.16} />
+        {tinyFig(c, 112, 116, 0.6)}
+        {guest.node}
+        {torch.node}
+        <path d={`M${r2(tx)},${r2(ty + 4)} L${r2(tx + 1)},${r2(ty - 6)}`} {...dk(c, 1.4)} />
+        <circle cx={r2(tx + 1)} cy={r2(ty - 9)} r={8} fill={c.u('glow')} />
+        <path d={flame(tx + 1, ty - 6, 9, 2.6, 1)} fill={c.u('fire')} />
+      </>
+    );
+  },
+
+  /** Longship Raiders: the shield-railed longship runs onto the beach; warriors leap from the bow and charge ashore. */
+  longship: (c) => {
+    const leaper = act(c, 128, 96, 1.05, POSE.leap);
+    const runner = act(c, 168, 120, 1.35, POSE.run);
+    const wader = act(c, 110, 122, 1.0, POSE.walk);
+    const armed = (f: Actor, s: number, key: string, kind: number) => (
+      <g key={key}>
+        {heldSpear(c, f.hand[0], f.hand[1], 6 * s, 12 * s, 0.9 * s)}
+        {f.node}
+        {helm(c, f.head, s)}
+        {paintedShield(c, f.head[0] + 1 * s, f.head[1] + 11 * s, 6.4 * s, kind)}
+      </g>
+    );
+    return (
+      <>
+        {sun(c, 30, 40, 7)}
+        <polygon points="-5,78 40,72 90,76 140,70 205,73 205,82 -5,82" fill={c.u('shade')} opacity={0.6} />
+        <rect x={0} y={80} width={200} height={50} fill={c.u('water')} />
+        <path d="M10,90 h22 M40,96 h30 M6,122 h20 M30,128 h24" {...ln(c, 0.6, 0.45)} />
+        <polygon points="84,131 104,110 130,100 205,92 205,131" fill={c.u('ground')} />
+        <path d="M84,131 Q92,118 104,110 Q116,104 130,100 L205,92" {...ln(c, 0.9, 0.6)} />
+        <path d="M78,128 q6,-8 14,-10 M88,116 q6,-6 12,-8" {...ln(c, 0.9, 0.75)} />
+        {longship(c, 64, 110, 0.92, { shields: true, oars: 8, rot: -7 })}
+        {sparks(c, 100, 104, 8, 4, 6, 3, 1.2)}
+        {trail(c, [110, 76], [124, 64], [140, 80], { dash: '2 2.2', op: 0.6 })}
+        {armed(wader, 1.0, 'w', 2)}
+        {armed(leaper, 1.05, 'l', 1)}
+        {armed(runner, 1.35, 'r', 0)}
+        {dust(c, 156, 122, 24, 5)}
+        {speed(c, 148, 100, [10, 16, 10], 5)}
+      </>
+    );
+  },
+
+  /** Shield-Wall Freemen: farmers lock overlapping round shields; spears levelled over the rims as missiles strike. */
+  norseShields: (c) => {
+    const xs = [0, 1, 2, 3, 4, 5, 6].map((i) => 6 + i * 30);
+    const stuck: [number, number, number][] = [[52, 76, -2.6], [118, 88, -2.3], [170, 72, -2.7]];
+    return (
+      <>
+        {sun(c, 30, 30, 6)}
+        {hills(c, 96, 7, 25, 0.45)}
+        {ground(c, 100)}
+        {xs.map((x, i) => (
+          <g key={`b${x}`}>
+            {spear(c, x + 14, 84, x + 22, 16, 0.9)}
+            <circle cx={x + 16} cy={52} r={3.4} fill={c.dark} />
+            {i % 2 === 0 && helm(c, [x + 16, 52], 1.2)}
+          </g>
+        ))}
+        {xs.map((x, i) => (
+          <g key={`h${x}`}>
+            <circle cx={x + 4} cy={62} r={4.4} fill={c.dark} />
+            {i % 3 !== 1 && helm(c, [x + 4, 62], 1.6)}
+            {spear(c, x - 10, 77, x + 24, 70.5, 1.1)}
+            <path d={`M${x - 2},100 L${x - 6 + (i % 2) * 2},122 M${x + 8},100 L${x + 12 - (i % 2) * 2},122`} {...dk(c, 2.8)} />
+          </g>
+        ))}
+        {xs.map((x, i) => (
+          <g key={`s${x}`}>{paintedShield(c, x + 4, 84, 17, i % 3)}</g>
+        ))}
+        {stuck.map(([x, y, a], i) => (
+          <g key={i}>
+            <line x1={x} y1={y} x2={r2(x - Math.cos(a) * 13)} y2={r2(y - Math.sin(a) * 13)} {...dk(c, 0.9)} />
+            <path d={`M${r2(x - Math.cos(a) * 13)},${r2(y - Math.sin(a) * 13)} l-2,-2 m2,2 l2,-2`} {...ln(c, 0.7, 0.9)} />
+            {impact(c, x, y, 2.8, 50 + i, 6)}
+          </g>
+        ))}
+        {trail(c, [206, 40], [196, 34], [184, 42], { dash: '2 2', op: 0.6 })}
+        {dust(c, 100, 124, 130, 31)}
+      </>
+    );
+  },
+
+  /** Huscarls: mail-clad household warriors advance with long Dane axes raised, shields slung. */
+  huscarls: (c) => {
+    const pose: Pose = { lean: 8, arms: [[[3, 2], [6, -1]], [[4, -5], [7, -10]]], legs: [[[-6, 10]], [[4, 4], [6, 10]]] };
+    const men: [number, number, number][] = [[44, 102, 1.1], [98, 116, 1.48], [156, 129, 1.85]];
+    return (
+      <>
+        {sun(c, 174, 30, 7)}
+        {hills(c, 92, 7, 33, 0.5)}
+        {ground(c)}
+        {banner(c, 18, 100, 52, 14)}
+        {dust(c, 70, 118, 90, 27)}
+        {speed(c, 30, 84, [14, 20, 12], 6)}
+        {men.map(([x, y, s]) => {
+          const m = act(c, x, y, s, pose);
+          const skirt = pts([[x - 3 * s, y - 13.5 * s], [x + 4.4 * s, y - 13.5 * s], [x + 6 * s, y - 5.5 * s], [x - 4.6 * s, y - 5.5 * s]]);
+          return (
+            <g key={x}>
+              {paintedShield(c, x - 5.5 * s, y - 17 * s, 7 * s, x === 98 ? 1 : 2)}
+              {m.node}
+              <polygon points={skirt} fill={c.mid} />
+              <path d={`M${r2(x - 3.4 * s)},${r2(y - 11 * s)} L${r2(x + 5 * s)},${r2(y - 11 * s)} M${r2(x - 4 * s)},${r2(y - 8 * s)} L${r2(x + 5.5 * s)},${r2(y - 8 * s)}`} {...ln(c, 0.7 * s, 0.6)} strokeDasharray={`${r2(0.4 * s)} ${r2(1 * s)}`} />
+              {helm(c, m.head, s)}
+              {daneAxe(c, m.hand[0], m.hand[1], s, 12 * s, 9 * s)}
+            </g>
+          );
+        })}
+        <path d="M188,70 l8,-2 M186,80 l10,0" {...ln(c, 0.9, 0.7)} />
+      </>
+    );
+  },
+
+  /** Coastal Raid: longships drawn up on the shingle; raiders carry sacks from a burning storehouse to the boats. */
+  coastalRaid: (c) => {
+    const carriers = [[84, 122, 1.25], [118, 110, 1.05], [146, 100, 0.85]].map(([x, y, s]) => {
+      const f = act(c, x, y, s, { lean: 10, arms: [[[3, -3], [5, -6]], [[-4, 4], [-7, 7]]], legs: [[[-5, 10]], [[3, 5], [5, 10]]] }, { flip: true });
+      return (
+        <g key={x}>
+          {f.node}
+          {helm(c, f.head, s, true)}
+          {sack(c, f.head[0] + 3.4 * s, f.head[1] + 1 * s, 0.62 * s)}
+        </g>
+      );
+    });
+    return (
+      <>
+        {night(c, 0.45, false)}
+        <circle cx={168} cy={70} r={60} fill={c.u('glow')} />
+        {smoke(c, 160, 52, 50, 6, 0.5)}
+        {smoke(c, 176, 50, 46, 5, 0.42)}
+        {smoke(c, 148, 56, 36, 4, 0.32)}
+        <rect x={0} y={84} width={200} height={46} fill={c.u('water')} />
+        <path d="M6,92 h20 M30,100 h26 M4,126 h22" {...ln(c, 0.6, 0.4)} />
+        <polygon points="40,131 62,110 110,98 150,88 205,84 205,131" fill={c.u('ground')} />
+        <path d="M40,131 L62,110 L110,98 L150,88 L205,84" {...ln(c, 0.7, 0.45)} />
+        {longship(c, 38, 98, 0.5, { shields: true, sail: 'furled', rot: -9 })}
+        {longship(c, 18, 124, 0.72, { shields: true, sail: 'furled', rot: -12 })}
+        <rect x={146} y={70} width={44} height={20} fill={c.u('lit')} />
+        <rect x={176} y={70} width={14} height={20} fill={c.u('shade')} opacity={0.55} />
+        <path d="M150,90 V71 M156,90 V71 M162,90 V71 M168,90 V71 M174,90 V71 M180,90 V71 M186,90 V71" {...ln(c, 0.4, 0.35)} stroke={c.dark} />
+        <polygon points="142,71 156,62 160,66 164,58 172,62 176,59 194,71" fill={c.deep} />
+        <path d="M156,62 L160,66 L164,58 M172,62 L176,59" {...ln(c, 0.8, 0.8)} />
+        <rect x={160} y={78} width={8} height={12} fill={c.p.accent} opacity={0.85} />
+        {[[146, 70, 8, -5], [152, 66, 13, -7], [158, 64, 10, -4], [163, 60, 17, -8], [169, 61, 12, -5], [175, 60, 15, -7], [181, 64, 10, -5], [187, 68, 8, -4]].map(([x, y, h, lean], i) => (
+          <path key={i} d={flame(x, y, h, 3 + (i % 3) * 0.8, lean)} fill={c.u('fire')} opacity={i % 2 ? 0.85 : 1} />
+        ))}
+        <path d="M150,58 q-4,-6 -10,-6 M162,46 q-5,-5 -12,-4 M176,48 q-4,-6 -10,-6" {...ln(c, 0.8, 0.6)} />
+        {sparks(c, 166, 40, 24, 12, 14, 19, 1.3)}
+        {sack(c, 140, 92, 0.9)}
+        {barrel(c, 132, 94, 0.8)}
+        {trail(c, [140, 98], [100, 106], [62, 108], { dash: '2 2.4', op: 0.55, head: 2.4 })}
+        {carriers}
+      </>
+    );
+  },
+
+  /** The Great Fleet: longship after longship under square sails, spread across the open sea. */
+  greatFleet: (c) => {
+    const rows = [
+      { y: 68, s: 0.13, xs: [14, 40, 66, 120, 146, 176] },
+      { y: 75, s: 0.2, xs: [6, 52, 98, 150, 194] },
+      { y: 87, s: 0.32, xs: [28, 100, 172] },
+      { y: 105, s: 0.5, xs: [62, 150] },
+      { y: 128, s: 0.76, xs: [100] },
+    ];
+    return (
+      <>
+        {sun(c, 150, 44, 8)}
+        <rect x={0} y={64} width={200} height={66} fill={c.u('water')} />
+        <polygon points="132,64 168,64 205,130 95,130" fill={c.u('lit')} opacity={0.12} />
+        <path d="M-5,64 H205" {...ln(c, 0.6, 0.45)} />
+        {rows.map(({ y, s, xs }, r) => (
+          <g key={r}>
+            {xs.map((x) => (
+              <g key={x}>
+                <path d={`M${r2(x - 56 * s)},${r2(y + 1)} Q${r2(x - 80 * s)},${r2(y + 3 * s + 1)} ${r2(x - 110 * s)},${r2(y + 6 * s + 1)}`} {...ln(c, 0.7, 0.4)} />
+                {longship(c, x, y, s, { shields: s >= 0.3, oars: s >= 0.45 ? 7 : 0, fill: r < 2 ? c.mid : undefined })}
+              </g>
+            ))}
+          </g>
+        ))}
+        {speed(c, 50, 112, [14, 22, 14], 6)}
+        <path d="M150,118 h20 M170,124 h26 M10,124 h24" {...ln(c, 0.6, 0.45)} />
+      </>
+    );
+  },
 };
 
 export const MOTIF_KEYS: string[] = Object.keys(MOTIFS);
@@ -3549,7 +4238,7 @@ export function CardArt({ motif, palette, className }: { motif: string; palette:
   );
 }
 
-type CivKey = 'kush' | 'aksum' | 'carthage' | 'sumer' | 'inca';
+type CivKey = 'kush' | 'aksum' | 'carthage' | 'sumer' | 'inca' | 'norse';
 
 const EMBLEMS: Record<CivKey, (c: Ctx, lit: string) => ReactNode> = {
   kush: (c, lit) => (
@@ -3606,6 +4295,18 @@ const EMBLEMS: Record<CivKey, (c: Ctx, lit: string) => ReactNode> = {
       </>
     );
   },
+  /** Longship under a striped square sail, scrolled stem posts, riding a wave. */
+  norse: (c, lit) => (
+    <>
+      <path d="M50,66 V22 M30,25 H70" {...dk(c, 2.4, lit)} />
+      <path d="M32,27 H68 Q72,42 66,57 H34 Q28,42 32,27 Z" fill={lit} />
+      <path d="M41,27 H47 V57 H41 Z M53,27 H59 V57 H53 Z" fill={c.dark} opacity={0.75} />
+      <path d="M21,52 Q25,63 36,66 H64 Q75,63 79,52 Q83,50 82,55 Q79,73 63,76 H37 Q21,73 18,55 Q17,50 21,52 Z" fill={lit} />
+      <path d="M79,52 q2,-5 -2,-6 M21,52 q-2,-5 2,-6" {...dk(c, 2, lit)} />
+      <path d="M26,64 Q30,71 38,72 H62 Q70,71 74,64" {...dk(c, 1, c.dark)} />
+      <path d="M24,84 q6.5,-5 13,0 t13,0 t13,0 t13,0" {...dk(c, 2.2, lit)} />
+    </>
+  ),
 };
 
 export function CivEmblem({

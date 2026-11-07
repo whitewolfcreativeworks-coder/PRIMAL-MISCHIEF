@@ -458,6 +458,24 @@ describe('civilization traits', () => {
   });
 });
 
+describe('the Norse', () => {
+  it('Longships: Raiders sail the turn they are built, and every breach takes 1 Prosperity', () => {
+    let st = ready(fresh('norse', 'sumer'));
+    st.players[1].prosperity = 4;
+    st = applyAction(st, 0, { type: 'play', uid: give(st, 0, 'norse_raiders') }).state;
+    const raider = st.players[0].units[0];
+    expect(raider.ready).toBe(true);
+    const before = st.players[0].prosperity;
+    const s = attackAndResolve(st, [raider.uid], { kind: 'city' }).state;
+    expect(s.players[1].prosperity).toBe(3);
+    expect(s.players[0].prosperity).toBe(before + 1);
+  });
+  it('has its own card in every Age of both decks', () => {
+    expect(validateData()).toEqual([]);
+    expect(getCiv('norse').decks.civ.every((tier) => tier.some((id) => getCard(id).civ === 'norse'))).toBe(true);
+  });
+});
+
 describe('victory and hidden information', () => {
   it('conquest when Stability reaches zero', () => {
     const st = ready(fresh());

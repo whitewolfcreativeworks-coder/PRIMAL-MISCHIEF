@@ -55,6 +55,10 @@ const CAST_OVERRIDES: Record<string, Partial<Casting>> = {
   inca_mace: { role: 'infantry', count: 4, attack: 'swing' },
   carth_mercs: { role: 'mercenary', count: 3, attack: 'swing' },
   militia: { role: 'militia', count: 2, attack: 'swing' },
+  norse_raiders: { vehicle: 'galley', vehicles: 1, role: 'raider', count: 3, crewRole: 'rower', attack: 'swing' },
+  norse_fleet: { vehicle: 'galley', vehicles: 2, role: 'marine', count: 3, crewRole: 'rower', attack: 'swing' },
+  norse_shieldwall: { role: 'infantry', count: 4, attack: 'thrust', outfit: { head: 'bare' } },
+  norse_huscarls: { role: 'elite', count: 3, attack: 'swing' },
 };
 
 const ROLE_ATTACK: Partial<Record<Role, Act>> = { archer: 'shoot', slinger: 'sling', militia: 'swing', mercenary: 'swing', raider: 'swing', rider: 'thrust' };
@@ -85,7 +89,7 @@ export function castFor(cardId: string, civ: CivId): Casting {
 }
 
 /** The pack animal of each culture (caravans, supply). */
-export const PACK_ANIMAL: Record<CivId, VehicleKind> = { kush: 'donkey', aksum: 'camel', carthage: 'donkey', sumer: 'donkey', inca: 'llama' };
+export const PACK_ANIMAL: Record<CivId, VehicleKind> = { kush: 'donkey', aksum: 'camel', carthage: 'donkey', sumer: 'donkey', inca: 'llama', norse: 'horse' };
 
 // ---------------------------------------------------------------- actors
 

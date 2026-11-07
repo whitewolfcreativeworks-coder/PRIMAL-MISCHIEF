@@ -412,7 +412,8 @@ function addUnit(st: GameState, pid: PlayerId, cardId: string, events: GameEvent
   const p = st.players[pid];
   if (p.units.length >= RULES.maxUnits) return;
   const card = getCard(cardId);
-  const swift = (card.keywords ?? []).includes('swift') || hasPassive(p, 'swift');
+  const kw = card.keywords ?? [];
+  const swift = kw.includes('swift') || hasPassive(p, 'swift');
   const u: UnitInst = { uid: uid ?? `t${newUid(st)}`, cardId, damage: 0, ready: swift, attacked: false, blocked: false, buff: 0 };
   p.units.push(u);
   events.push({ type: 'unitDeployed', player: pid, uid: u.uid, cardId });
@@ -771,6 +772,8 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
   if (dealt > 0) {
     changeRes(st, atk.id, 'momentum', 1, events);
     if (raiders) progressRaided = loseProgress(st, def.id, 2 * raiders, events, true);
+    // Longships: every breach carries off plunder.
+    if (trait(atk) === 'longships' && raiders > 0 && def.prosperity > 0) { changeRes(st, def.id, 'prosperity', -1, events); changeRes(st, atk.id, 'prosperity', 1, events); }
     log(st, atk.id, `${atk.name}'s assault deals ${dealt} damage${wallAbsorbed ? ` after the walls absorb ${wallAbsorbed}` : ''}${progressRaided ? ` and raids ${progressRaided} Progress` : ''}.`);
   } else {
     if (liveBlockers.length || wallAbsorbed || trapAbsorbed) changeRes(st, def.id, 'momentum', 1, events);

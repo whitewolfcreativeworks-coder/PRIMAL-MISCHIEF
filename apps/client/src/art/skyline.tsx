@@ -14,7 +14,7 @@
 import { useId, type ReactNode } from 'react';
 import { type Palette, mixColor as mix, desatColor as desat, seededRng as rng } from './motifs';
 
-type Civ = 'kush' | 'aksum' | 'carthage' | 'sumer' | 'inca';
+type Civ = 'kush' | 'aksum' | 'carthage' | 'sumer' | 'inca' | 'norse';
 type Age = 1 | 2 | 3 | 4 | 5;
 type P = [number, number];
 
@@ -342,6 +342,91 @@ function ship(L: Item, x: number, y: number, s: number) {
   L.lit += rect(x - 4 * s, y - 11 * s, 8 * s, 7 * s);
 }
 
+/* Norse primitives */
+
+/** Turf-roofed farmstead: low stone-and-turf walls under a rounded grass roof. */
+function turfHouse(L: Item, x: number, w: number, h: number, y = 0) {
+  L.body += `M${f(x)},${f(y)}V${f(y - h * 0.32)}Q${f(x + w * 0.06)},${f(y - h)} ${f(x + w / 2)},${f(y - h)}Q${f(x + w * 0.94)},${f(y - h)} ${f(x + w)},${f(y - h * 0.32)}V${f(y)}Z`;
+  L.shade += `M${f(x + w * 0.66)},${f(y)}V${f(y - h * 0.94)}Q${f(x + w * 0.94)},${f(y - h)} ${f(x + w)},${f(y - h * 0.32)}V${f(y)}Z`;
+  L.line += `M${f(x)},${f(y - h * 0.32)}Q${f(x + w * 0.06)},${f(y - h)} ${f(x + w / 2)},${f(y - h)}Q${f(x + w * 0.94)},${f(y - h)} ${f(x + w)},${f(y - h * 0.32)}`;
+  door(L, x + w * 0.3, y, 2.4, 3.6);
+}
+
+/** Longhouse seen side-on: bowed wall, hip-ended curved roof; `posts` adds the leaning outer buttress posts. */
+function longhouseS(L: Item, x: number, w: number, h: number, y = 0, posts = false) {
+  const e = y - h * 0.4;
+  L.body += `M${f(x)},${f(y)}V${f(e)}Q${f(x + w / 2)},${f(e - 2)} ${f(x + w)},${f(e)}V${f(y)}Z`;
+  L.shade += rect(x + w * 0.74, e, w * 0.26, y - e);
+  const top = y - h;
+  const cy = (top - 0.25 * e) / 0.75;
+  L.body += `M${f(x - 2.4)},${f(e + 0.6)}C${f(x + w * 0.03)},${f(cy)} ${f(x + w * 0.97)},${f(cy)} ${f(x + w + 2.4)},${f(e + 0.6)}Z`;
+  L.shade += `M${f(x + w * 0.7)},${f(top + 0.2)}C${f(x + w * 0.9)},${f(top + 0.4)} ${f(x + w * 0.98)},${f(cy + h * 0.25)} ${f(x + w + 2.4)},${f(e + 0.6)}L${f(x + w * 0.7)},${f(e)}Z`;
+  L.line += `M${f(x - 2.4)},${f(e + 0.6)}C${f(x + w * 0.03)},${f(cy)} ${f(x + w * 0.97)},${f(cy)} ${f(x + w + 2.4)},${f(e + 0.6)}`;
+  door(L, x + w * 0.5, y, 2.4, Math.min(4.4, (y - e) * 0.9));
+  if (posts) for (let px = x + 4; px < x + w - 2; px += 7) L.frond += `M${f(px - 2.4)},${f(y)}L${f(px)},${f(e - 0.6)}`;
+}
+
+/** A-frame stockfish drying rack. */
+function dryingRack(L: Item, x: number, w: number, h: number, y = 0) {
+  L.frond += `M${f(x - 1.6)},${f(y)}L${f(x)},${f(y - h)}L${f(x + 1.6)},${f(y)}M${f(x + w - 1.6)},${f(y)}L${f(x + w)},${f(y - h)}L${f(x + w + 1.6)},${f(y)}M${f(x - 1)},${f(y - h)}H${f(x + w + 1)}`;
+  for (let fx = x + 1.6; fx < x + w - 0.8; fx += 1.8) L.dark += rect(fx - 0.45, y - h + 0.5, 0.9, h * 0.42);
+}
+
+/** Small clinker boat / longship, facing right; waterline y. */
+function longboat(L: Item, x: number, y: number, s: number, sail: boolean, Ls?: Item) {
+  L.body += `M${f(x - 11 * s)},${f(y - 5.6 * s)}Q${f(x - 8 * s)},${f(y + 0.8 * s)} ${f(x)},${f(y + 0.6 * s)}Q${f(x + 8 * s)},${f(y + 0.8 * s)} ${f(x + 11 * s)},${f(y - 6 * s)}Q${f(x + 7 * s)},${f(y - 1.8 * s)} ${f(x)},${f(y - 1.8 * s)}Q${f(x - 7 * s)},${f(y - 1.8 * s)} ${f(x - 11 * s)},${f(y - 5.6 * s)}Z`;
+  if (sail) {
+    L.stroke += `M${f(x)},${f(y - 1.5 * s)}V${f(y - 14 * s)}`;
+    const S = Ls ?? L;
+    S.lit += rect(x - 4.6 * s, y - 13 * s, 9.2 * s, 7.6 * s);
+    S.dark += rect(x - 2.6 * s, y - 13 * s, 1.3 * s, 7.6 * s) + rect(x + 1.3 * s, y - 13 * s, 1.3 * s, 7.6 * s);
+  }
+}
+
+/** Boat-shed (naust) seen from the water: open gable with a stem post inside. */
+function naust(L: Item, x: number, w: number, h: number, y = 0) {
+  L.body += poly([[x, y], [x, y - h * 0.32], [x + w / 2, y - h], [x + w, y - h * 0.32], [x + w, y]]);
+  L.shade += poly([[x + w / 2, y - h], [x + w, y - h * 0.32], [x + w, y], [x + w * 0.62, y]]);
+  L.dark += poly([[x + w * 0.16, y], [x + w * 0.16, y - h * 0.34], [x + w / 2, y - h * 0.8], [x + w * 0.84, y - h * 0.34], [x + w * 0.84, y]]);
+  L.lit += `M${f(x + w * 0.42)},${f(y)}Q${f(x + w * 0.56)},${f(y - h * 0.2)} ${f(x + w * 0.5)},${f(y - h * 0.55)}L${f(x + w * 0.56)},${f(y - h * 0.55)}Q${f(x + w * 0.62)},${f(y - h * 0.2)} ${f(x + w * 0.5)},${f(y)}Z`;
+  L.line += `M${f(x)},${f(y - h * 0.32)}L${f(x + w / 2)},${f(y - h)}L${f(x + w)},${f(y - h * 0.32)}`;
+}
+
+/** Trelleborg-type ring fortress side-on: a broad flat-topped rampart with palisade, gate, roofs within. */
+function ringFortress(L: Item, Lb: Item, x: number, w: number, h: number) {
+  const x0 = x - w / 2;
+  const x1 = x + w / 2;
+  const hw = ((w - 30) / 4) * 0.9;
+  for (let k = 0; k < 4; k++) {
+    const hx = x0 + 15 + k * ((w - 30) / 4);
+    const d = `M${f(hx)},${f(-h + 1)}C${f(hx + 1)},${f(-h - 6)} ${f(hx + hw - 1)},${f(-h - 6)} ${f(hx + hw)},${f(-h + 1)}`;
+    Lb.body += d + 'Z';
+    Lb.line += d;
+  }
+  L.body += `M${f(x0)},0Q${f(x0 + 6)},${f(-h)} ${f(x0 + 14)},${f(-h)}H${f(x1 - 14)}Q${f(x1 - 6)},${f(-h)} ${f(x1)},0Z`;
+  L.shade += `M${f(x0)},0Q${f(x0 + 6)},${f(-h)} ${f(x0 + 14)},${f(-h)}V${f(-h * 0.25)}H${f(x1 - 14)}V${f(-h)}Q${f(x1 - 6)},${f(-h)} ${f(x1)},0Z`;
+  for (let px = x0 + 12; px < x1 - 12; px += 2.6) L.body += rect(px, -h - 2.6, 1.4, 2.6);
+  L.line += `M${f(x0 + 14)},${f(-h)}H${f(x1 - 14)}`;
+  L.dark += poly([[x - 4.5, 0], [x - 3.5, -h + 0.5], [x + 3.5, -h + 0.5], [x + 4.5, 0]]);
+  block(L, x - 5.5, 11, 4, -h, 0.3);
+}
+
+function pine(L: Item, x: number, h: number, y = 0) {
+  L.body += rect(x - 0.5, y - h * 0.22, 1, h * 0.22);
+  L.body += poly([[x - h * 0.26, y - h * 0.18], [x, y - h * 0.62], [x + h * 0.26, y - h * 0.18]]);
+  L.body += poly([[x - h * 0.2, y - h * 0.48], [x, y - h], [x + h * 0.2, y - h * 0.48]]);
+  L.shade += poly([[x, y - h * 0.62], [x + h * 0.26, y - h * 0.18], [x, y - h * 0.18]]);
+}
+
+/** A little harbour on the bank: an inlet of water with plank jetties on posts. */
+function harbour(L: Item, x0: number, x1: number, jetties: number[]) {
+  L.water += rect(x0, -3, x1 - x0, 3.4);
+  for (const jx of jetties) {
+    L.body += rect(jx, -3.6, 22, 1.2);
+    for (let px = jx + 2; px < jx + 22; px += 5) L.stroke += `M${f(px)},${f(-2.4)}v2.4`;
+  }
+}
+
 /* ------------------------------------------------------------------------ */
 /* Civilization layouts                                                       */
 /* ------------------------------------------------------------------------ */
@@ -404,8 +489,13 @@ function dwelling(L: Item, civ: Civ, era: number, s: Slot, R: () => number, gold
       gableHouse(L, x, w, base * 1.15, y, true);
       if (era >= 3) for (let yy = y - 2.6; yy > y - base * 0.6; yy -= 2.6) L.line += `M${f(x)},${f(yy)}h${f(w)}`;
       break;
+    case 'norse':
+      // the town layer is stretched 1.45x vertically, so keep these low and long
+      if (era === 1 || (era === 2 && R() < 0.4)) turfHouse(L, x - w * 0.1, w * 1.3, base * 0.5, y);
+      else longhouseS(L, x - w * 0.3, w * 1.6, base * (era >= 4 ? 0.56 : 0.5), y);
+      break;
   }
-  if (tall && civ !== 'inca' && era > 1) {
+  if (tall && civ !== 'inca' && civ !== 'norse' && era > 1) {
     const top = y - base * (civ === 'carthage' ? 1.05 : 0.82);
     flatHouse(L, x + w * 0.15, w * 0.7, base * 0.5, R, golden, top);
   }
@@ -435,6 +525,14 @@ function scenery(S: Scene, civ: Civ, age: Age) {
       L.water += rect(520, -14, 300, 14);
       L.body += `M-10,0V-10Q120,-26 260,-12Q380,-4 520,-6V0Z`;
       L.body += `M760,-14Q790,-26 820,-20V-14Z`;
+      break;
+    }
+    case 'norse': {
+      // a steep-sided fjord: sheer walls at both ends, a lower ridge far up the inlet
+      S.item('far', true).body += hillLine(-12, 10, 70);
+      L.body += 'M-10,0V-86Q16,-90 54,-74Q110,-48 160,-18Q190,-4 230,0Z';
+      L.body += 'M810,0V-92Q784,-94 744,-76Q690,-50 640,-18Q610,-4 572,0Z';
+      L.line += 'M20,-80Q70,-62 120,-36M60,-70Q100,-50 150,-22M780,-86Q740,-66 700,-46M750,-74Q700,-46 660,-22';
       break;
     }
     case 'inca': {
@@ -535,6 +633,50 @@ function signature(S: Scene, civ: Civ, age: Age, R: () => number, golden: boolea
       }
       break;
     }
+    case 'norse': {
+      if (age === 1) {
+        const Lr = S.item('main');
+        dryingRack(Lr, 352, 20, 8);
+        dryingRack(Lr, 448, 16, 7);
+        longboat(Lr, 506, -1, 0.9, false);
+        longboat(Lr, 528, -1, 0.75, false);
+      }
+      if (age === 2 || age === 3) {
+        const Lh = S.item('main');
+        harbour(Lh, 490, 660, [504, 560, 616]);
+        longboat(Lh, 540, -2, 1.15, true);
+        longboat(Lh, 596, -2, age === 3 ? 1.4 : 1.0, age === 3);
+        if (age === 3) longboat(Lh, 646, -2, 1.05, true);
+        dryingRack(Lh, 300, 18, 7);
+      }
+      if (age === 3) longhouseS(S.item('main'), 372, 64, 16, 0, true);
+      if (age >= 4) {
+        const Lb = S.item('back');
+        const Lf = S.item('main');
+        ringFortress(Lf, Lb, 290, age === 5 ? 140 : 120, age === 5 ? 15 : 13);
+        if (golden) {
+          banner(Lf, 236, -17, 10);
+          banner(Lf, 344, -17, 10);
+        }
+        const Ln = S.item('main');
+        harbour(Ln, 500, 720, age === 5 ? [] : [640]);
+        for (let k = 0; k < 3; k++) naust(Ln, 506 + k * 30, 24, 14, -0.4);
+        if (age === 4) {
+          longboat(Ln, 678, -2, 1.3, true);
+          longhouseS(S.item('main'), 400, 60, 17, 0, true);
+        }
+      }
+      if (age === 5) {
+        const Lg = S.item('main');
+        longhouseS(Lg, 384, 116, 28, 0, true);
+        smoke(Lg, 442, -30, 18, 3);
+        banner(Lg, 378, -2, 18);
+        banner(Lg, 506, -2, 18);
+        const Lfl = S.item('main');
+        for (let k = 0; k < 6; k++) longboat(Lfl, 612 + k * 20 + (k % 2) * 4, -2 + (k % 2) * 0.6, 1.25 - (k % 2) * 0.2, true);
+      }
+      break;
+    }
     case 'inca': {
       if (age >= 3) incaHall(S.item('main'), 436, 46, 17);
       if (age >= 4) {
@@ -577,6 +719,16 @@ function landscape(S: Scene, civ: Civ, age: Age, R: () => number) {
       if (age >= 3) Q.line += 'M470,0L560,-10L520,-20L610,-30L580,-40L660,-46';
     }
   }
+  if (civ === 'norse') {
+    const L = S.item('main');
+    const n = 4 + age;
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 ? 1 : -1;
+      const x = 400 + side * (150 + i * 26 + R() * 18);
+      pine(L, x, 14 + R() * 8);
+      pine(L, x + 6, 10 + R() * 6, -1);
+    }
+  }
   if (civ === 'kush' || civ === 'sumer') {
     const L = S.item('main');
     const n = civ === 'sumer' ? 3 + age * 2 : 2 + age;
@@ -590,6 +742,12 @@ function landscape(S: Scene, civ: Civ, age: Age, R: () => number) {
 function defences(S: Scene, civ: Civ, age: Age, golden: boolean) {
   const L = S.item('main');
   const span = [0, 120, 160, 220, 280][age - 1];
+  if (civ === 'norse') {
+    // open market town at Age II, a palisade at III; from IV the ring fortress is the stronghold
+    if (age === 3) palisade(L, 400 - span * 0.75, 400 - 28, 9);
+    if (age === 3) palisade(L, 400 + 28, 400 + span * 0.45, 9);
+    return;
+  }
   if (age === 2) {
     if (civ === 'sumer') {
       L.body += rect(400 - span, -7, span * 2, 7);

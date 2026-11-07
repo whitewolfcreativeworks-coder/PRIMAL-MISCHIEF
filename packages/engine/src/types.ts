@@ -3,7 +3,7 @@
 // sent over the network and replayed deterministically.
 
 export type PlayerId = 0 | 1;
-export type CivId = 'kush' | 'aksum' | 'carthage' | 'sumer' | 'inca';
+export type CivId = 'kush' | 'aksum' | 'carthage' | 'sumer' | 'inca' | 'norse';
 
 /** The two decks every civilization brings. */
 export type Family = 'civ' | 'mil';
@@ -103,7 +103,7 @@ export type ReactionKind =
   | 'vigilantWatch' // cancel a hostile tactic
   | 'mirror'; // cancel a hostile tactic and turn it on its caster
 
-export type TraitKind = 'bowmen' | 'trade' | 'hiredSwords' | 'scribes' | 'storehouses';
+export type TraitKind = 'bowmen' | 'trade' | 'hiredSwords' | 'scribes' | 'storehouses' | 'longships';
 
 export interface CivDef {
   id: CivId;

@@ -162,14 +162,27 @@ export function makeVehicle(kind: VehicleKind, civ: CivId, color: number): Vehic
       const b = new Builder(color);
       const ship = b.pivot([0, 0, 0]);
       const L = big ? 0.62 : 0.48;
-      const hull = prism([[-L / 2, 0.04], [-L / 2 + 0.05, 0], [L / 2 - 0.06, 0], [L / 2, 0.035], [L / 2 + 0.02, 0.08], [L / 2 - 0.05, 0.075], [-L / 2 + 0.04, 0.08], [-L / 2 - 0.02, 0.14]], 0.11);
+      const norse = civ === 'norse';
+      // A Norse longship is double-ended and shallow, with high curving stems; others have a ram bow and a raised stern.
+      const hull = norse
+        ? prism([[-L / 2 - 0.03, 0.1], [-L / 2 + 0.06, 0], [L / 2 - 0.06, 0], [L / 2 + 0.03, 0.1], [L / 2 - 0.03, 0.07], [-L / 2 + 0.03, 0.07]], 0.1)
+        : prism([[-L / 2, 0.04], [-L / 2 + 0.05, 0], [L / 2 - 0.06, 0], [L / 2, 0.035], [L / 2 + 0.02, 0.08], [L / 2 - 0.05, 0.075], [-L / 2 + 0.04, 0.08], [-L / 2 - 0.02, 0.14]], 0.11);
       b.add(hull, [0, -0.02, 0], [0, 0, 0], ship);
-      if (kind === 'galley') b.add(cone(0.016, 0.07, 4), [L / 2 + 0.04, 0.0, 0], [0, 0, -Math.PI / 2], ship, false); // bronze ram
+      if (kind === 'galley' && !norse) b.add(cone(0.016, 0.07, 4), [L / 2 + 0.04, 0.0, 0], [0, 0, -Math.PI / 2], ship, false); // bronze ram
+      if (norse) {
+        // Curling stems fore and aft, and a row of round shields along each rail.
+        for (const dir of [1, -1]) b.line3([[dir * (L / 2 + 0.03), 0.08, 0], [dir * (L / 2 + 0.06), 0.14, 0], [dir * (L / 2 + 0.05), 0.19, 0], [dir * (L / 2 + 0.02), 0.2, 0]], ship);
+        for (let i = 0; i < 6; i++) for (const side of [1, -1]) {
+          const sg = cyl(0.016, 0.016, 0.004, 8); sg.rotateX(Math.PI / 2);
+          b.add(sg, [-L / 2 + 0.09 + i * ((L - 0.18) / 5), 0.065, side * 0.052], [0, 0, 0], ship, false);
+        }
+      }
       b.add(cyl(0.004, 0.004, 0.36, 4), [0, 0.24, 0], [0, 0, 0], ship, false); // mast
       const sail = b.pivot([0, 0.3, 0], ship);
       b.add(box(0.005, 0.15, 0.2), [0, 0, 0], [0, 0, 0], sail);
       b.line3([[-L / 2 + 0.02, 0.1, 0], [0, 0.42, 0], [L / 2 - 0.02, 0.09, 0]], ship);
       if (civ === 'carthage') b.add(sph(0.012, 6, 5), [L / 2 + 0.01, 0.1, 0.056], [0, 0, 0], ship, false); // painted eye
+      if (norse) sail.scale.set(1, 1.1, 1.35); // a broad square sail
       const oars: THREE.Object3D[] = [];
       const n = kind === 'trader' ? 3 : big ? 7 : 5;
       for (let i = 0; i < n; i++) {
@@ -187,7 +200,7 @@ export function makeVehicle(kind: VehicleKind, civ: CivId, color: number): Vehic
         model, kind, seats, flanks: [],
         animate(t, speed) {
           oars.forEach((o, i) => { o.rotation.z = Math.sin(t * 4 + (i % 2) * 0) * 0.45 * (speed ? 1 : 0.2); o.rotation.y = Math.cos(t * 4) * 0.15; });
-          ship.position.y = Math.sin(t * 2.2) * 0.008; ship.rotation.x = Math.sin(t * 1.7) * 0.03; sail.scale.z = 1 + Math.sin(t * 2) * 0.05;
+          ship.position.y = Math.sin(t * 2.2) * 0.008; ship.rotation.x = Math.sin(t * 1.7) * 0.03; sail.scale.z = (norse ? 1.35 : 1) * (1 + Math.sin(t * 2) * 0.05);
         },
         strike(p) { ship.rotation.z = Math.sin(Math.min(1, p) * Math.PI) * 0.12; },
       };

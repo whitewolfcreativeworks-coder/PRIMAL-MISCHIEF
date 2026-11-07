@@ -8,10 +8,10 @@ import { buildingUid, handUid, isPlay, unitUids, type Lesson, type Step, type Tu
  * so every civilization gets all three.
  */
 
-const FARM: Record<CivId, string> = { kush: 'kush_cattle', aksum: 'aksum_fields', carthage: 'farm', sumer: 'farm', inca: 'inca_terraces' };
-const ARCHER: Record<CivId, string> = { kush: 'kush_archers', aksum: 'archers', carthage: 'archers', sumer: 'archers', inca: 'inca_slingers' };
-const RIVAL: Record<CivId, CivId> = { kush: 'carthage', aksum: 'carthage', carthage: 'sumer', sumer: 'carthage', inca: 'carthage' };
-const RIDER: Record<CivId, string> = { kush: 'carth_cavalry', aksum: 'carth_cavalry', carthage: 'sumer_wagon', sumer: 'carth_cavalry', inca: 'carth_cavalry' };
+const FARM: Record<CivId, string> = { kush: 'kush_cattle', aksum: 'aksum_fields', carthage: 'farm', sumer: 'farm', inca: 'inca_terraces', norse: 'norse_fishing' };
+const ARCHER: Record<CivId, string> = { kush: 'kush_archers', aksum: 'archers', carthage: 'archers', sumer: 'archers', inca: 'inca_slingers', norse: 'archers' };
+const RIVAL: Record<CivId, CivId> = { kush: 'carthage', aksum: 'carthage', carthage: 'sumer', sumer: 'carthage', inca: 'carthage', norse: 'carthage' };
+const RIDER: Record<CivId, string> = { kush: 'carth_cavalry', aksum: 'carth_cavalry', carthage: 'sumer_wagon', sumer: 'carth_cavalry', inca: 'carth_cavalry', norse: 'carth_cavalry' };
 const name = (id: string) => getCard(id).name;
 const civName = (c: CivId) => getCiv(c).name;
 
@@ -220,5 +220,5 @@ function mischiefLesson(civ: CivId): Lesson {
   };
 }
 
-const CIVS_ORDER: CivId[] = ['kush', 'aksum', 'carthage', 'sumer', 'inca'];
+const CIVS_ORDER: CivId[] = ['kush', 'aksum', 'carthage', 'sumer', 'inca', 'norse'];
 export const LAYER_LESSONS: Lesson[] = CIVS_ORDER.flatMap((c) => [buildLesson(c), armyLesson(c), mischiefLesson(c)]);

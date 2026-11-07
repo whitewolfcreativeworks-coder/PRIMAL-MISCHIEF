@@ -165,6 +165,7 @@ A unit gets +2 if any unit on the other side has a role it beats. Three or more 
 | **Aksum** | Coin and Stone | Harbors +1 Prosperity | Red Sea Commerce: +2 Prosperity, +1 Progress per Market/Harbor |
 | **Carthage** | Sea Lanes and Silver | Units cost 1 less | Close the Sea Lanes: rival −4 Prosperity −2 Progress, you +3 Prosperity |
 | **Sumer** | Canal and Tablet | Scribes: see the top card of each deck when picking; +1 Worker | Rebuild the City: full repair, end Unrest, +3 Stability |
+| **Norse** | Keel and Shield Wall | Longships: Raiders that get through carry off 1 Prosperity (Longship Raiders are Swift) | Summer Raid: rival −2 Progress, you +2 Prosperity |
 | **Inca** | Road and Terrace | Storehouses: lose half Progress to raids and fallen buildings | Mountain Logistics: heal/ready units, draw one of each |
 
 Each civilization has its own card in every Age of both decks (20 unique
@@ -178,21 +179,23 @@ names, trait, signature) and ten cards.
 
 ## 10. Balance
 
-`npx tsx packages/engine/test/simulate-par.ts 10 normal` plays every ordered
-pairing ten times with the normal AI. Latest, with food, workers and roles (200 games):
+`npx tsx packages/engine/test/simulate-par.ts 8 normal` plays every ordered
+pairing eight times with the normal AI. Latest, six civilizations (240 games):
 
 | Civ | Win rate |
 |---|---|
-| Kush | 60% |
+| Kush | 58% |
 | Aksum | 46% |
-| Carthage | 55% |
-| Sumer | 34% |
-| Inca | 55% |
+| Carthage | 49% |
+| Sumer | 30% |
+| Inca | 58% |
+| Norse | 60% |
 
-First player wins 51%; games last about 20 player-turns; Golden Age 146,
-Conquest 54. The AI hides about 15 cards a game; traps spring about 3 times.
-**Open issues:** Sumer is weakest (Carthage beats it 85%); Kush leads. The
-Inca outlier from v0.5 is gone (70% → 55%).
+First player wins 51%; about 21 player-turns a game; Golden Age 161,
+Conquest 79. Norse launched at 78% and was tuned down: Summer Raid no longer
+hits Stability, Coastal Raid no longer pays the raider, only Longship Raiders
+(not every raider) are Swift, plunder needs a Raider, Hedeby gives 1
+Prosperity. **Open issue:** Sumer remains weakest (30%).
 
 Tuning so far: the riverbank +1 for defenders (without it attacks snowballed
 and 60% of games ended in conquest); Aksum’s trade trait narrowed to Harbors

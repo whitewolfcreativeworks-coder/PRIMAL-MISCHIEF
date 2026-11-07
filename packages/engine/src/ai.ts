@@ -61,7 +61,7 @@ export function evaluate(st: GameState, me: PlayerId): number {
 
 // ------------------------------------------------------------------ draft
 
-const AGGRESSION: Record<CivId, number> = { kush: 0.5, carthage: 0.5, inca: 0.2, aksum: -0.3, sumer: -0.4 };
+const AGGRESSION: Record<CivId, number> = { kush: 0.5, carthage: 0.5, inca: 0.2, aksum: -0.3, sumer: -0.4, norse: 0.3 };
 
 /** Decide the blind pick: how many cards from each deck, and what to throw away first. */
 export function chooseDraft(st: GameState, me: PlayerId, diff: Difficulty = 'normal'): Action {

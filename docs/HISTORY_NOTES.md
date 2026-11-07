@@ -161,3 +161,19 @@ reconstructions. These choices are deliberate:
 - Figures are deliberately plain, with no faces or skin tones. Every culture
   is drawn in the same hologram style and colour by side, so no people is
   marked out.
+
+## Norse (added in v0.7)
+
+- **Who:** seafaring peoples of Scandinavia in the Viking Age (c. 793–1066 CE). They raided, but mostly they farmed, fished and traded, from the Volga and Baghdad's silver routes to Iceland, Greenland and briefly Newfoundland (L'Anse aux Meadows).
+- **Cards:**
+  - Fishing Grounds: stockfish and herring.
+  - Hedeby Market: a Baltic trading town.
+  - The Thing: the law assembly; Iceland's Althing dates from about 930.
+  - Trelleborg Ring Fortress: Danish ring fortresses, about 980.
+  - Hall of the Sea Kings: chieftains' halls such as those excavated at Lejre and Borg.
+  - Longship Raiders, Shield-Wall Freemen (bóndi), Huscarls (household warriors), Coastal Raid, and the Great Fleet (the large combined campaigns of the late 9th century).
+- **Depiction rules:** no horned helmets (a 19th-century invention); rounded conical helmets or bare heads, round shields, mail for the wealthy. No "barbarian" caricature. No religious symbols or idols on cards, buildings or holograms. Hedeby's trade included enslaved people; the game does not depict it, and the card's flavour text acknowledges it plainly rather than hiding it.
+- **Mechanics:**
+  - Longship Raiders are Swift: shallow-draught ships could land anywhere and strike the turn they arrive.
+  - The Longships trait (plunder) reflects raids aimed at portable wealth.
+  - The Thing reflects law and consensus, giving Stability.

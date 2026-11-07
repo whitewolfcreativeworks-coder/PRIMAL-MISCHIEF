@@ -453,4 +453,71 @@ const inca: Lesson = {
   ],
 };
 
-export const LESSONS: Lesson[] = [kush, aksum, carthage, sumer, inca];
+
+// ------------------------------------------------------------------ Norse
+
+const norse: Lesson = {
+  id: 'norse-keel',
+  civ: 'norse',
+  opponent: 'sumer',
+  title: 'Keel and Shield Wall',
+  summary: 'Land Longship Raiders the turn they are built, plunder Sumer across the river, and finish with a Summer Raid.',
+  setup: (t) => {
+    t.edit((st) => { st.phase = 'draft'; st.players[0].progress = 7; st.players[0].prosperity = 6; st.players[1].progress = 5; });
+    stack(t, 0, 'civ', 'norse_fishing');
+    stack(t, 0, 'mil', 'norse_raiders');
+    t.build(1, 'farm', 'sumer_reeds');
+  },
+  steps: [
+    {
+      text: 'The Norse hold the near bank; Sumer’s farms and reed houses lie across the river, with nobody guarding them. The Norse win by speed: Longship Raiders are Swift, so they sail the turn they are built, and your trait, Longships, lets Raiders that get through carry off 1 Prosperity as plunder.',
+    },
+    draftStep(
+      'Refill your hand to 6, choosing blind from each deck. You want growth and a ship: take at least 1 of each.',
+      1, 1, 2,
+      'Set at least 1 Civilization and 1 Military card, keep every card, then tap Draw.',
+    ),
+    playStep(
+      'Your Age bar stands at 7 of 8. Fishing Grounds cost 1 Prosperity, give +1 Progress and make 2 Food every turn: food for your people and your crews. Build them.',
+      'norse_fishing',
+      'Play Fishing Grounds.',
+    ),
+    playStep(
+      'Market Towns, Age II: stronger cards joined your decks and you gained 2 Momentum. Now launch Longship Raiders. Most units must wait a turn after they are built; yours can sail at once.',
+      'norse_raiders',
+      'Play Longship Raiders.',
+    ),
+    {
+      text: 'Sumer’s bank is empty. Send the Raiders across at Sumer’s city.',
+      expect: (a, st) => a.type === 'attack' && a.target.kind === 'city' && unitUids(st, 0, 'norse_raiders').every((u) => a.unitUids.includes(u)),
+      solution: (st) => ({ type: 'attack', unitUids: unitUids(st, 0, 'norse_raiders'), target: { kind: 'city' } }),
+      hint: 'Select your Longship Raiders, then tap Attack their city.',
+      highlight: [{ kind: 'unit', cardId: 'norse_raiders', owner: 'me' }, { kind: 'button', name: 'attackCity' }],
+    },
+    {
+      text: 'The raid got through: Sumer lost 2 Stability, 2 Progress to your Raiders, and 1 Prosperity in plunder that is now yours. The hit also earned you 1 Momentum, so you have 3.',
+    },
+    signatureStep(
+      'Summer Raid, the Norse Signature, costs 3 Momentum: the rival loses 2 Progress and you gain 2 Prosperity. Use it while their bank is open.',
+      'Tap the Signature button: Summer Raid.',
+    ),
+    endTurnStep('End your turn. Fast raids leave your own bank thin, so watch what Sumer does with its turn.'),
+    draftStep(
+      'Sumer built Reed Houses and guarded nothing. That is the Norse rhythm: strike, plunder, and grow on what you take. Later Ages bring Shield-Wall Freemen to hold your shore, Huscarls, and the Trelleborg ring fortress. Pick your cards.',
+      0, 0, 1,
+      'Pick any mix and tap Draw.',
+      {
+        onEnter: (t) => {
+          oppDraft(t);
+          oppPlay(t, 'sumer_reeds');
+          t.opp({ type: 'endTurn' });
+        },
+      },
+    ),
+    {
+      text: 'Raiders are fragile (2 Strength) and archers beat them. Pick your targets where the rival is weak, probe for hidden traps with a single ship, and keep enough Fishing Grounds to feed your crews.',
+    },
+  ],
+};
+
+export const LESSONS: Lesson[] = [kush, aksum, carthage, sumer, inca, norse];

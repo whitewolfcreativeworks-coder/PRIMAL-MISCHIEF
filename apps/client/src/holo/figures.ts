@@ -69,6 +69,15 @@ export const OUTFITS: Record<CivId, Partial<Record<Role, Partial<Outfit>>> & { b
     driver: { head: 'helmet', weapon: 'javelin' },
     ruler: { head: 'helmet', garment: 'fleece', weapon: 'axe', cloak: true },
   },
+  norse: {
+    base: { head: 'bare', garment: 'tunic', weapon: 'none', shield: 'none', cloak: true },
+    infantry: { head: 'helmet', weapon: 'spear', shield: 'round' },
+    elite: { head: 'helmet', weapon: 'axe', shield: 'round', cloak: true },
+    raider: { head: 'helmet', weapon: 'axe', shield: 'round', load: 'sack' },
+    marine: { head: 'helmet', weapon: 'axe', shield: 'round' },
+    archer: { head: 'cap', weapon: 'bow', quiver: true },
+    ruler: { head: 'helmet', garment: 'robe', weapon: 'sword', shield: 'round', cloak: true },
+  },
   inca: {
     base: { head: 'headband', garment: 'unku', weapon: 'none', shield: 'none' },
     infantry: { head: 'helmet', weapon: 'mace', shield: 'square' },
