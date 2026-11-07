@@ -55,4 +55,4 @@ whose model terms restrict commercial use.
 
 | Asset | Source | Use |
 |---|---|---|
-| Cover art (`apps/client/src/assets/cover.webp`, `apps/client/public/icon-*.png/jpg`) | Supplied by the project owner, Nov 2026 | Title screen, app icon. Ownership and licence for commercial release to be confirmed by the owner (record the tool or artist and its terms here). |
+| Cover art (`apps/client/src/assets/cover.webp`, `apps/client/public/icon-*.png/jpg`) | Made by the project owner with ChatGPT image generation, Nov 2026 | Title screen, app icon. Placeholder skin; check OpenAI's current terms on output ownership and commercial use before release. |
