@@ -55,4 +55,4 @@ whose model terms restrict commercial use.
 
 | Asset | Source | Use |
 |---|---|---|
-| Cover art (`apps/client/src/assets/cover.webp`, `apps/client/public/icon-*.png/jpg`) | Made by the project owner with ChatGPT image generation, Nov 2026 | Title screen, app icon. Placeholder skin; check OpenAI's current terms on output ownership and commercial use before release. |
+| Cover art (`apps/client/src/assets/cover.webp`, `apps/client/public/icon-*.png/jpg`) | Made by the project owner with ChatGPT image generation, Nov 2026 | Title screen (six-civilization cover, second version) and app icon (fan of the six card backs). Check OpenAI's current terms on output ownership and commercial use before release. |
