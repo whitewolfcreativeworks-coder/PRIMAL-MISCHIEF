@@ -155,19 +155,21 @@ names, trait, signature) and ten cards.
 
 ## 10. Balance
 
-`npx tsx packages/engine/test/simulate-par.ts 10 normal` plays every ordered
-pairing ten times with the normal AI. Latest (200 games):
+`npx tsx packages/engine/test/simulate-par.ts 20 normal` plays every ordered
+pairing twenty times with the normal AI. Latest, with hidden traps (400 games):
 
 | Civ | Win rate |
 |---|---|
-| Kush | 55% |
-| Aksum | 46% |
-| Carthage | 58% |
-| Sumer | 48% |
-| Inca | 44% |
+| Kush | 51% |
+| Aksum | 38% |
+| Carthage | 54% |
+| Sumer | 38% |
+| Inca | 70% |
 
-First player wins 56% (±7% at this sample size). Known outlier: Carthage’s
-cheap mercenaries beat Sumer about 80% of the time in AI play.
+First player wins 54%. Golden Age 215, Conquest 184. The AI hides about 24
+cards a game and traps spring about 5 times. **Open issue:** with traps, Inca
+jumped from about 40% to 70% in AI play and Sumer and Aksum dropped. The cause
+has not been found yet; the next tuning pass should start there.
 
 Tuning so far: the riverbank +1 for defenders (without it attacks snowballed
 and 60% of games ended in conquest); Aksum’s trade trait narrowed to Harbors
