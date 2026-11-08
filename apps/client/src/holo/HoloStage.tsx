@@ -67,7 +67,12 @@ export function scenesFor(events: GameEvent[], view: GameState, me: PlayerId, pa
         break;
       }
       case 'ageUp': out.push(ageUpScene(P[e.player].civ, e.age, e.name, e.player === me)); break;
-      case 'unitDeployed': deployed[e.player].push(e.cardId); break;
+      case 'unitDeployed': {
+        // A unit called to arms is staged inside the battle itself, not as a separate arrival.
+        const fight = events.slice(i + 1).find((x) => x.type === 'combat');
+        if (fight && fight.type === 'combat' && fight.mustered === e.cardId && fight.attacker !== e.player) break;
+        deployed[e.player].push(e.cardId); break;
+      }
       case 'buildingRaised': if (getCard(e.cardId).kind === 'fort') deployed[e.player].push(e.cardId); break;
       case 'tactic': if (full) out.push(tacticScene(e.cardId, e.player === me, P[e.player].civ)); break;
       case 'buildingDestroyed': if (!covered.has(i)) out.push(collapseScene(e.cardId, e.player === me, P[e.player].civ)); break;

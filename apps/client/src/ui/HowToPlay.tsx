@@ -41,6 +41,10 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
             <p>Tap your glowing units, then the rival’s city or one of their buildings. Units must wait a turn after deploying unless they are Swift or you have a Road. Defenders fight with +1 Strength on their own bank. Damage that gets through hits walls first, then the target. A fallen building costs its owner Stability and Progress.</p>
           </section>
           <section>
+            <h4><Icon name="str" /> Call to Arms</h4>
+            <p>When your rival attacks, you can rush one soldier card from your hand straight into the fight: pay its cost and it blocks at once, then stays in your army. Keep a little Prosperity back at the end of your turn and every soldier in your hand is a possible answer.</p>
+          </section>
+          <section>
             <h4><Icon name="shadow" /> Reactions: the mischief</h4>
             <p>When attacked or targeted by a Hostile card, the defender may play one Reaction: ambush the crossing, retreat, turn the tide, offer a treaty, foil the plot, or mirror it back on its caster. One response per threat.</p>
           </section>

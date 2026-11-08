@@ -1,6 +1,6 @@
 import {
   actingPlayer, ageName, availableBlockers, canPlayCard, costOf, draftNeeded, getCard, getCiv, HIDDEN_CARD, incomeOf, isWorking,
-  maxIntegrity, other, playableReactions, previewPlay, progressNeeded, readyAttackers, roleOf, ROLE_LABEL, roleText, RULES, trapText, tuckSpots, unitMaxHp, unitStr, workingBuildings, cityLedger, beatsAny,
+  canDeploy, maxIntegrity, musterable, other, playableReactions, previewPlay, progressNeeded, readyAttackers, roleOf, ROLE_LABEL, roleText, RULES, trapText, tuckSpots, unitMaxHp, unitStr, workingBuildings, cityLedger, beatsAny,
   type BuildingInst, type GameEvent, type GameState, type PlayerId, type PlayerState, type UnitInst,
 } from '@pm/engine';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
@@ -32,6 +32,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const [attackers, setAttackers] = useState<string[]>([]);
   const [blockers, setBlockers] = useState<string[]>([]);
   const [reaction, setReaction] = useState<string | null>(null);
+  const [muster, setMuster] = useState<string | null>(null);
   const [inspect, setInspect] = useState<{ cardId: string; owner: PlayerId; note?: string } | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [ledgerFor, setLedgerFor] = useState<PlayerId | null>(null);
@@ -63,7 +64,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const responding = !!view && view.phase === 'response' && acting === me;
   const pendingKey = view?.pending ? JSON.stringify(view.pending) : '';
 
-  useEffect(() => { setBlockers([]); setReaction(null); }, [pendingKey]);
+  useEffect(() => { setBlockers([]); setReaction(null); setMuster(null); }, [pendingKey]);
   useEffect(() => { if (!myMain) { setAttackers([]); setTargeting(null); setSelected(null); setHiding(null); } }, [myMain]);
   // A fresh draft each turn: suggest a split based on what is already in hand.
   useEffect(() => {
@@ -139,7 +140,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   // Auto-pass a response window when there is nothing at all we could do.
   useEffect(() => {
     if (!responding || !view || snap.coach) return;
-    if (availableBlockers(view, me).length === 0 && playableReactions(view, me).length === 0) {
+    if (availableBlockers(view, me).length === 0 && playableReactions(view, me).length === 0 && musterable(view, me).length === 0) {
       const t = setTimeout(() => match.send({ type: 'respond', blockerUids: [] }), sleepMs(pace, 900));
       return () => clearTimeout(t);
     }
@@ -157,6 +158,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const ready = new Set(myMain ? readyAttackers(view, me) : []);
   const canBlock = new Set(responding ? availableBlockers(view, me) : []);
   const reactable = new Set(responding ? playableReactions(view, me) : []);
+  const musterOk = new Set(responding ? musterable(view, me) : []);
   const attackPower = attackers.reduce((s, uid) => { const u = P.units.find((x) => x.uid === uid); return s + (u ? unitStr(P, u) : 0); }, 0);
   const need = drafting ? draftNeeded(P, discards.length) : 0;
   const civPick = Math.min(draftCiv, need);
@@ -168,8 +170,15 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     if (drafting) { setDiscards((d) => (d.includes(uid) ? d.filter((x) => x !== uid) : [...d, uid])); play('tap'); return; }
     if (!myMain && !responding) { setSelected(uid); return; }
     if (responding) {
-      if (reactable.has(uid)) setReaction((r) => (r === uid ? null : uid));
-      else setSelected(uid);
+      // A reaction and a Call to Arms can go together if Prosperity covers both; otherwise the new pick replaces the other.
+      const costIn = (u: string | null) => { const c = u ? P.hand.find((x) => x.uid === u) : undefined; return c ? costOf(P, getCard(c.cardId)) : 0; };
+      if (reactable.has(uid)) {
+        if (reaction !== uid && costIn(uid) + costIn(muster) > P.prosperity) setMuster(null);
+        setReaction((r) => (r === uid ? null : uid)); play('tap');
+      } else if (musterOk.has(uid)) {
+        if (muster !== uid && costIn(uid) + costIn(reaction) > P.prosperity) setReaction(null);
+        setMuster((m) => (m === uid ? null : uid)); play('tap');
+      } else setSelected(uid);
       return;
     }
     setTargeting(null);
@@ -218,7 +227,15 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     setInspect({ cardId: u.cardId, owner, note: `Strength ${unitStr(p, u)} · Health ${unitMaxHp(p, u) - u.damage}/${unitMaxHp(p, u)}${u.attacked ? ' · Exhausted: attacked this turn, cannot block' : ''}` });
   }
 
-  const respond = () => send({ type: 'respond', blockerUids: blockers, reactionUid: reaction ?? undefined });
+  const musterNote = (cardId: string) => {
+    const card = getCard(cardId);
+    if (pending?.kind !== 'attack') return 'Soldiers can only be called to arms against an attack, not a scheme.';
+    if (P.units.length >= RULES.maxUnits) return 'Your army is at full strength, so no one else can join the fight.';
+    if (!canDeploy(P, card)) return `Needs a working ${card.requiresToDeploy} to be called to arms.`;
+    if (P.prosperity < costOf(P, card)) return `Calling it to arms costs ${costOf(P, card)} Prosperity; you have ${P.prosperity}.`;
+    return null;
+  };
+  const respond = () => send({ type: 'respond', blockerUids: blockers, reactionUid: reaction ?? undefined, musterUid: muster ?? undefined });
   const doDraft = () => send({ type: 'draft', civ: civPick, mil: need - civPick, discard: discards });
 
   // ------------------------------------------------------------ render
@@ -361,12 +378,13 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       <div className={`hand ${responding ? 'hand-respond' : ''} ${drafting ? 'hand-draft' : ''}`}>
         {P.hand.map((c, i) => {
           const card = getCard(c.cardId);
-          const playable = myMain ? canPlayCard(view, me, c.uid) === null : responding ? reactable.has(c.uid) : drafting;
+          const playable = myMain ? canPlayCard(view, me, c.uid) === null : responding ? reactable.has(c.uid) || musterOk.has(c.uid) : drafting;
           return (
             <div key={c.uid} className={`hand-slot ${glowHand(c.cardId) ? 'coach-glow' : ''} ${discards.includes(c.uid) ? 'to-discard' : ''}`} style={{ '--i': i, '--n': P.hand.length } as CSSProperties}>
               <CardFace cardId={c.cardId} civ={P.civ} cost={costOf(P, card)} disabled={!playable}
-                selected={selected === c.uid || reaction === c.uid || targeting === c.uid} onClick={() => tapHand(c.uid)} />
+                selected={selected === c.uid || reaction === c.uid || muster === c.uid || targeting === c.uid} onClick={() => tapHand(c.uid)} />
               {drafting && discards.includes(c.uid) && <span className="discard-tag">Discard</span>}
+              {responding && muster === c.uid && <span className="discard-tag muster-tag">To arms!</span>}
             </div>
           );
         })}
@@ -380,13 +398,13 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       )}
 
       {responding && pending && (
-        <ResponsePanel glow={glowBtn('respond')} view={view} me={me} blockers={blockers} reaction={reaction} onRespond={respond} onClearReaction={() => setReaction(null)} />
+        <ResponsePanel glow={glowBtn('respond')} view={view} me={me} blockers={blockers} reaction={reaction} muster={muster} onRespond={respond} onClearReaction={() => setReaction(null)} onClearMuster={() => setMuster(null)} />
       )}
 
       {selCard && !drafting && (
         <Sheet onClose={() => setSelected(null)} wide>
           <Inspector cardId={selCard.cardId} civ={P.civ} cost={costOf(P, getCard(selCard.cardId))}
-            note={myMain ? canPlayCard(view, me, selCard.uid) : getCard(selCard.cardId).kind === 'reaction' ? 'Reactions are played when your rival attacks or schemes against you.' : null}>
+            note={myMain ? canPlayCard(view, me, selCard.uid) : responding && getCard(selCard.cardId).kind === 'unit' ? musterNote(selCard.cardId) : getCard(selCard.cardId).kind === 'reaction' ? 'Reactions are played when your rival attacks or schemes against you.' : getCard(selCard.cardId).kind === 'unit' ? 'Call to Arms: when your rival attacks, you can pay this unit’s cost to rush it into the fight as a blocker.' : null}>
             {myMain && canPlayCard(view, me, selCard.uid) === null && (
               <button className="btn primary big" onClick={playSelected}>
                 {getCard(selCard.cardId).target && getCard(selCard.cardId).target !== 'none' ? 'Choose target' : getCard(selCard.cardId).kind === 'unit' ? 'Deploy' : getCard(selCard.cardId).family === 'civ' ? 'Build' : 'Play'}
@@ -643,33 +661,43 @@ function UnitToken({ u, p, fx, canAttack, canBlock, selected, attacking, onTap, 
   );
 }
 
-function ResponsePanel({ view, me, blockers, reaction, onRespond, onClearReaction, glow }: {
-  glow?: string; view: GameState; me: PlayerId; blockers: string[]; reaction: string | null; onRespond: () => void; onClearReaction: () => void;
+function ResponsePanel({ view, me, blockers, reaction, muster, onRespond, onClearReaction, onClearMuster, glow }: {
+  glow?: string; view: GameState; me: PlayerId; blockers: string[]; reaction: string | null; muster: string | null;
+  onRespond: () => void; onClearReaction: () => void; onClearMuster: () => void;
 }) {
   const pending = view.pending!;
   const O = view.players[other(me)];
   const P = view.players[me];
   const reacts = playableReactions(view, me);
+  const musters = musterable(view, me);
   let title: string, detail: ReactNode;
   if (pending.kind === 'attack') {
     const units = O.units.filter((u) => pending.unitUids.includes(u.uid));
     const power = units.reduce((s, u) => s + unitStr(O, u), 0);
     const tgt = pending.target.kind === 'city' ? 'your city' : getCard(P.buildings.find((b) => b.uid === (pending.target as { uid: string }).uid)?.cardId ?? 'farm').name;
     title = `${O.name} crosses the river toward ${tgt}`;
-    detail = <>{units.length} unit{units.length > 1 ? 's' : ''}, <b>{power}</b> strength{units.some((u) => (getCard(u.cardId).keywords ?? []).includes('siege')) ? ' (+siege)' : ''}. Tap your units to block (they fight with +1 Strength on their own bank){reacts.length ? ', or pick a reaction card below' : ''}.</>;
+    detail = <>{units.length} unit{units.length > 1 ? 's' : ''}, <b>{power}</b> strength{units.some((u) => (getCard(u.cardId).keywords ?? []).includes('siege')) ? ' (+siege)' : ''}. {(() => {
+      const ways = [
+        P.units.some((u) => !u.attacked && !u.blocked) && 'tap your units to block (+1 Strength on their own bank)',
+        musters.length > 0 && 'call a soldier from your hand to arms (pay its cost; it blocks at once)',
+        reacts.length > 0 && 'play a reaction card',
+      ].filter(Boolean) as string[];
+      return ways.length ? <> You can {ways.length > 1 ? `${ways.slice(0, -1).join(', ')}, or ${ways[ways.length - 1]}` : ways[0]}.</> : <> Nothing can answer this one.</>;
+    })()}</>;
   } else {
     const card = getCard(pending.card.cardId);
     const tgt = pending.targetUid ? P.buildings.find((b) => b.uid === pending.targetUid) : undefined;
     title = `${O.name} schemes: ${card.name}`;
     detail = <>{card.text}{tgt ? <> Target: <b>{getCard(tgt.cardId).name}</b>.</> : null}{reacts.length ? ' Pick a reaction to counter it.' : ' You have no counter ready.'}</>;
   }
-  const doing = blockers.length || reaction;
+  const doing = blockers.length || reaction || muster;
   return (
     <div className="respond-panel" role="dialog" aria-label="Respond">
       <div className="rp-title">{title}</div>
       <div className="rp-detail">{detail}</div>
       <div className="rp-actions">
         {reaction && <span className="rp-chip">{getCard(P.hand.find((c) => c.uid === reaction)!.cardId).name}<button onClick={onClearReaction} aria-label="Remove reaction"><Icon name="close" size={12} /></button></span>}
+        {muster && <span className="rp-chip">To arms: {getCard(P.hand.find((c) => c.uid === muster)!.cardId).name}<button onClick={onClearMuster} aria-label="Cancel call to arms"><Icon name="close" size={12} /></button></span>}
         {blockers.length > 0 && <span className="rp-chip">{blockers.length} blocker{blockers.length > 1 ? 's' : ''}</span>}
         <button className={`btn big ${doing ? 'primary' : 'ghost'} ${glow ?? ''}`} onClick={onRespond}>{doing ? 'Respond' : pending.kind === 'attack' ? 'Take the hit' : 'Let it happen'}</button>
       </div>

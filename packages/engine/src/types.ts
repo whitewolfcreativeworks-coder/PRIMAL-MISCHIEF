@@ -237,7 +237,7 @@ export type Action =
   | { type: 'play'; uid: string; targetUid?: string }
   | { type: 'attack'; unitUids: string[]; target: AttackTarget }
   | { type: 'signature'; targetUid?: string }
-  | { type: 'respond'; reactionUid?: string; blockerUids: string[] }
+  | { type: 'respond'; reactionUid?: string; blockerUids: string[]; /** Call to Arms: a unit card from hand joins the fight as a blocker. */ musterUid?: string }
   | { type: 'tuck'; uid: string; at: string }
   | { type: 'endTurn' }
   | { type: 'concede' };
@@ -296,6 +296,8 @@ export type GameEvent =
       /** Hidden traps that sprang at the target (null = none). Garrison troops are listed in blockerCards with blockerFromTrap. */
       trap: TrapReport | null;
       blockerFromTrap: boolean[];
+      /** Call to Arms: the unit card the defender rushed from hand into this fight (it is also among blockerCards). */
+      mustered?: string | null;
       /** Every reaction in force, from the hand and from traps (reaction is the first). */
       reactions: ReactionKind[];
       /** Roles and formations (null when the attack was called off). */

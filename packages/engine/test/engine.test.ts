@@ -21,7 +21,7 @@ function give(st: GameState, pid: PlayerId, cardId: string): string { const uid 
 function build(st: GameState, pid: PlayerId, cardId: string): string { const uid = `b${n++}`; st.players[pid].buildings.push({ uid, cardId, damage: 0, bonusIntegrity: 0, unrest: 0 }); return uid; }
 function unit(st: GameState, pid: PlayerId, cardId: string, isReady = true): string { const uid = `u${n++}`; st.players[pid].units.push({ uid, cardId, damage: 0, ready: isReady, attacked: false, blocked: false, buff: 0 }); return uid; }
 /** End player 0's turn and auto-draft for player 1, returning to a state where player 1 is in main. */
-function attackAndResolve(st: GameState, attackers: string[], target: { kind: 'city' } | { kind: 'building'; uid: string }, respond: { reactionUid?: string; blockerUids: string[] } = { blockerUids: [] }) {
+function attackAndResolve(st: GameState, attackers: string[], target: { kind: 'city' } | { kind: 'building'; uid: string }, respond: { reactionUid?: string; blockerUids: string[]; musterUid?: string } = { blockerUids: [] }) {
   const s = applyAction(st, 0, { type: 'attack', unitUids: attackers, target }).state;
   return applyAction(s, 1, { type: 'respond', ...respond });
 }
@@ -505,4 +505,52 @@ describe('victory and hidden information', () => {
     }
     expect(st.phase).toBe('over');
   }, 60_000);
+});
+
+// ---------------------------------------------------------------- call to arms
+
+describe('Call to Arms', () => {
+  it('rushes a unit card from hand into the fight as a blocker, paid from Prosperity', () => {
+    const st = ready(fresh());
+    const atk = unit(st, 0, 'spearmen');
+    st.players[1].prosperity = 5;
+    const m = give(st, 1, 'shieldBearers');
+    const handBefore = st.players[1].hand.length;
+    const r = attackAndResolve(st, [atk], { kind: 'city' }, { blockerUids: [], musterUid: m });
+    const d = r.state.players[1];
+    expect(d.prosperity).toBe(5 - getCard('shieldBearers').cost);
+    expect(d.hand.length).toBe(handBefore - 1);
+    const combat = r.events.find((e) => e.type === 'combat');
+    expect(combat && combat.type === 'combat' && combat.mustered).toBe('shieldBearers');
+    expect(combat && combat.type === 'combat' && combat.blockerCards).toContain('shieldBearers');
+    expect(combat && combat.type === 'combat' && combat.dealt).toBe(0); // 3/4 shield on its own bank holds a 2-strength spear
+  });
+
+  it('cannot be paid without the Prosperity, or used against a scheme', () => {
+    const st = ready(fresh());
+    const atk = unit(st, 0, 'spearmen');
+    st.players[1].prosperity = 1;
+    const m = give(st, 1, 'shieldBearers');
+    const s = applyAction(st, 0, { type: 'attack', unitUids: [atk], target: { kind: 'city' } }).state;
+    expect(() => applyAction(s, 1, { type: 'respond', blockerUids: [], musterUid: m })).toThrow(RuleError);
+
+    const st2 = ready(fresh());
+    st2.players[1].prosperity = 9;
+    const m2 = give(st2, 1, 'militia');
+    const sab = give(st2, 0, 'sack');
+    const s2 = applyAction(st2, 0, { type: 'play', uid: sab }).state;
+    expect(s2.phase).toBe('response');
+    expect(() => applyAction(s2, 1, { type: 'respond', blockerUids: [], musterUid: m2 })).toThrow(RuleError);
+  });
+
+  it('is something the AI uses when it has nothing else', () => {
+    const st = ready(fresh());
+    const atk = unit(st, 0, 'eliteGuard');
+    st.players[1].prosperity = 6;
+    st.players[1].hand = [];
+    give(st, 1, 'shieldBearers');
+    const s = applyAction(st, 0, { type: 'attack', unitUids: [atk], target: { kind: 'city' } }).state;
+    const a = chooseAction(s, 1, 'normal');
+    expect(a.type === 'respond' && a.musterUid).toBeTruthy();
+  });
 });

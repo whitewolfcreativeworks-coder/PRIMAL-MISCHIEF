@@ -1,6 +1,6 @@
 import { getCard, progressNeeded, RULES } from './data';
 import { actingPlayer, applyAction, costOf, draftNeeded, incomeOf, maxIntegrity, other, unitMaxHp, unitStr, workingBuildings } from './engine';
-import { availableBlockers, listPlays, playableReactions, readyAttackers } from './legal';
+import { availableBlockers, listPlays, musterable, playableReactions, readyAttackers } from './legal';
 import type { Action, Age, CivId, GameState, PlayerId, PlayerState } from './types';
 import { HIDDEN_CARD } from './view';
 
@@ -192,13 +192,15 @@ export function chooseResponse(st: GameState, me: PlayerId, diff: Difficulty = '
     : [[]];
   let best: Action = { type: 'respond', blockerUids: [] };
   let bestV = -Infinity;
+  // Call to Arms: optionally rush one unit card from hand into the fight.
+  const musters: (string | undefined)[] = [undefined, ...musterable(st, me)];
   reactions.forEach((r, ri) => {
-    for (const blk of blockSets) {
-      const a: Action = { type: 'respond', reactionUid: r, blockerUids: blk };
+    for (const m of musters) for (const blk of blockSets) {
+      const a: Action = { type: 'respond', reactionUid: r, blockerUids: blk, ...(m ? { musterUid: m } : {}) };
       const s = tryApply(st, me, a);
       if (!s) continue;
       let v = evaluate(s, me);
-      if (diff === 'easy') v += (noise(st.turn * 17 + ri * 3 + blk.length) - 0.5) * 6;
+      if (diff === 'easy') v += (noise(st.turn * 17 + ri * 3 + blk.length + (m ? 5 : 0)) - 0.5) * 6;
       if (v > bestV) { bestV = v; best = a; }
     }
   });

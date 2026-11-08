@@ -646,6 +646,7 @@ input, select { font: inherit; }
 .hand-draft .card { cursor: pointer; }
 .hand-slot.to-discard .card { filter: grayscale(.8) brightness(.5); transform: translateY(24%) rotate(2deg); }
 .discard-tag { position: absolute; top: 4%; left: 50%; transform: translateX(-50%); z-index: 3; padding: 2px 8px; border-radius: 99px; background: var(--red); color: #fff; font-size: .72em; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; pointer-events: none; }
+.hand .muster-tag { background: linear-gradient(#f0d58a, #c79b3e); color: #2a1a06; pointer-events: none; }
 .hand-slot { position: relative; }
 .hand-empty { color: var(--muted); align-self: center; font-size: .9em; }
 .unit.not-ready { opacity: .78; }

@@ -1,5 +1,5 @@
 import { getCard, getCiv } from './data';
-import { ACTION_REACTIONS, applyAction, ATTACK_REACTIONS, braceOf, canPlayCard, incomeOf, other, requireMainPhase, ROLE_BEATS, SNARE_DAMAGE, trapRole, trapsOf, trapWallOf } from './engine';
+import { ACTION_REACTIONS, applyAction, ATTACK_REACTIONS, braceOf, canDeploy, canPlayCard, costOf, incomeOf, other, requireMainPhase, ROLE_BEATS, SNARE_DAMAGE, trapRole, trapsOf, trapWallOf } from './engine';
 import { RULES } from './data';
 import type { Action, CardDef, GameState, PlayerId, PlayerState, UnitRole } from './types';
 
@@ -40,6 +40,18 @@ export function playableReactions(st: GameState, pid: PlayerId): string[] {
     if (c.cardId === '?') return false;
     const card = getCard(c.cardId);
     return card.kind === 'reaction' && !!card.reaction && allowed.includes(card.reaction) && p.prosperity >= card.cost;
+  }).map((c) => c.uid);
+}
+
+/** Call to Arms: unit cards in hand that could rush into this fight as a blocker (paid from Prosperity). */
+export function musterable(st: GameState, pid: PlayerId): string[] {
+  if (st.phase !== 'response' || st.pending?.kind !== 'attack') return [];
+  const p = st.players[pid];
+  if (p.units.length >= RULES.maxUnits) return [];
+  return p.hand.filter((c) => {
+    if (c.cardId === '?') return false;
+    const card = getCard(c.cardId);
+    return card.kind === 'unit' && canDeploy(p, card) && p.prosperity >= costOf(p, card);
   }).map((c) => c.uid);
 }
 

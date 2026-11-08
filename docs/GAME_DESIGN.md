@@ -106,6 +106,20 @@ Units that attacked are exhausted and cannot block on the rival’s next turn.
 | Vigilant Watch | Hostile tactic | Cancel it |
 | Mirror the Scheme | Hostile tactic | Cancel it and turn it on its caster |
 
+### Call to Arms (v0.7)
+
+When attacked, the defender may also rush **one unit card from hand** into the
+fight: pay its cost, it deploys and blocks at once, then stays in the army.
+It combines with a reaction if Prosperity covers both. Not usable against a
+Hostile scheme.
+
+Why: play-testing found the defender rarely had an answer. In 1,903 AI-vs-AI
+attacks before this rule, the defender had no unit free to block 68% of the
+time and no attack reaction in hand 56% of the time; 52% of attacks met no
+defence at all (no blocker, reaction or trap). Unit cards were the most common
+cards in hand but could only be played on your own turn. Call to Arms turns
+them into answers and rewards keeping Prosperity back, without adding cards.
+
 ### Hidden traps (v0.5)
 
 Any card in hand can be hidden face-down under one of your buildings or your
@@ -180,22 +194,26 @@ names, trait, signature) and ten cards.
 ## 10. Balance
 
 `npx tsx packages/engine/test/simulate-par.ts 8 normal` plays every ordered
-pairing eight times with the normal AI. Latest, six civilizations (240 games):
+pairing eight times with the normal AI. Latest, six civilizations (240 games),
+after Call to Arms (v0.7):
 
 | Civ | Win rate |
 |---|---|
-| Kush | 58% |
-| Aksum | 46% |
-| Carthage | 49% |
-| Sumer | 30% |
-| Inca | 58% |
-| Norse | 60% |
+| Kush | 54% |
+| Aksum | 45% |
+| Carthage | 53% |
+| Sumer | 29% |
+| Inca | 56% |
+| Norse | 64% |
 
 First player wins 51%; about 21 player-turns a game; Golden Age 161,
-Conquest 79. Norse launched at 78% and was tuned down: Summer Raid no longer
+Conquest 79. Call to Arms moved no civilization more than a few points (the AI
+deploys most units on its own turn, so it can call one to arms in only ~4% of
+attacks, and does so ~70% of the time when it can; humans who hold soldiers
+in hand will use it more). Norse launched at 78% and was tuned down: Summer Raid no longer
 hits Stability, Coastal Raid no longer pays the raider, only Longship Raiders
 (not every raider) are Swift, plunder needs a Raider, Hedeby gives 1
-Prosperity. **Open issue:** Sumer remains weakest (30%).
+Prosperity. **Open issues:** Sumer remains weakest (29%); Norse edges up (64%).
 
 Tuning so far: the riverbank +1 for defenders (without it attacks snowballed
 and 60% of games ended in conquest); Aksum’s trade trait narrowed to Harbors

@@ -50,6 +50,9 @@ export function galleryScenes(civ: CivId, rival: CivId): GalleryItem[] {
   add('Traps', 'Hidden Ambush', () => battleScene(combat({ attacker: 1, attackerCards: ['spearmen', 'militia'], reaction: 'ambush', attackerFates: ['ambush', 'ambush'], trap: { cards: ['ambush'], roles: ['reaction'], absorbed: 0, snare: 0 } }), false, rctx));
   add('Traps', 'Arson caught by a trap', () => schemeScene({ type: 'scheme', caster: 0, cardId: 'arson', targetCardId: 'market', outcome: 'foiled', mirrorTargetCardId: null, trap: { cards: ['spearmen'], roles: ['garrison'], absorbed: 0, snare: 0 } }, true,
     { casterCiv: civ, victimCiv: rival, casterAge: 3, victimAge: 3, victimUnits: [], victimUnitsLost: [], destroyed: { target: false, mirror: false } }));
+  add('Reactions', 'Call to Arms', () => battleScene(combat({
+    attacker: 1, attackerCards: ['spearmen', 'raiders'], blockerCards: [units[units.length - 1]], mustered: units[units.length - 1], attackerFates: ['melee', null],
+  }), false, rctx));
   const R: ReactionKind[] = ['shieldWall', 'ambush', 'feignedRetreat', 'turnTheTide', 'treaty'];
   for (const r of R) {
     const cancelled = r === 'feignedRetreat' || r === 'treaty';

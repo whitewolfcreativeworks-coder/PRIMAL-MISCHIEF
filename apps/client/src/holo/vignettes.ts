@@ -87,6 +87,8 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
   const R = cancelR ?? e.reaction;
   const trap = e.trap ?? null;
   const fromTrap = e.blockerFromTrap ?? e.blockerCards.map(() => false);
+  // Call to Arms: the unit rushed from hand is the last non-trap blocker with that card.
+  const musterIdx = e.mustered ? e.blockerCards.reduce((k, id, i) => (id === e.mustered && !fromTrap[i] ? i : k), -1) : -1;
   const trapNames = trap ? trap.cards.map((id) => getCard(id).name) : [];
   const fates = e.attackerFates ?? e.attackerCards.map((_, i) => (i < e.attackersLost ? 'melee' : null));
   const bFates = e.blockerFates ?? e.blockerCards.map((_, i) => i < e.blockersLost);
@@ -96,7 +98,7 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
   const rName = R ? getCard(R === 'treaty' ? 'aksum_treaty' : R).name : '';
   const tgt = `${attackerIsMe ? 'their' : 'your'} ${e.target === 'city' ? 'city' : getCard(e.target).name}`;
   const fell = fates.filter(Boolean).length;
-  const trapLead = trap ? `Hidden trap${trap.cards.length > 1 ? 's' : ''}: ${trapNames.join(', ')}! ` : '';
+  const trapLead = (trap ? `Hidden trap${trap.cards.length > 1 ? 's' : ''}: ${trapNames.join(', ')}! ` : '') + (e.mustered ? `${getCard(e.mustered).name} called to arms! ` : '');
   const caption = trapLead + (R === 'treaty' ? `${rName}: the attack is called off for tribute`
     : e.cancelled ? `${rName}: the assault strikes empty ground${fell ? ` — ${plural(fell, 'unit')} lost` : ''}`
       : e.tideBack > 0 ? `${rName}! ${e.tideBack} damage crashes back on the attacker`
@@ -140,7 +142,9 @@ export function battleScene(e: CombatEv, attackerIsMe: boolean, ctx: BattleCtx):
       // Blockers hold the defender's bank.
       B = e.blockerCards.map((id, i) => {
         const z = lane(i, nB, Math.min(0.5, 0.18 * nB));
-        const a = T.squad(id, ctx.dCiv, dCol, [fromTrap[i] ? 0.7 : 0.27, z], BACK, { max: perB, spread: 0.06 * perB });
+        const a = T.squad(id, ctx.dCiv, dCol, [fromTrap[i] ? 0.7 : i === musterIdx ? 1.15 : 0.27, z], BACK, { max: perB, spread: 0.06 * perB });
+        // Called to arms: the squad runs out from behind the city to the riverbank before the attackers land.
+        if (i === musterIdx) a.forEach((x) => x.do(0.25, 'charge', { to: [0.27 + (x.x - 1.15), x.z], dur: 0.8 }).do(1.1, 'idle'));
         // Trap garrison: hidden inside the target, then bursts out to the riverbank.
         if (fromTrap[i]) { a.forEach((x) => x.do(TRAP_T, 'charge', { to: [0.27 + (x.x - 0.7), x.z], dur: 0.5 }).do(TRAP_T + 0.55, 'idle')); garrison.push(...a); }
         return { a, dies: !!bFates[i] };

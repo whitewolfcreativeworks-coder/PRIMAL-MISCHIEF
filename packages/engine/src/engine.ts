@@ -629,7 +629,7 @@ function distribute(st: GameState, pid: PlayerId, units: UnitInst[], dmg: number
   return Math.max(0, left);
 }
 
-function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[], handReaction: ReactionKind | null, events: GameEvent[]) {
+function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[], handReaction: ReactionKind | null, events: GameEvent[], mustered: string | null = null) {
   const atk = st.players[pend.attacker];
   const def = st.players[other(pend.attacker)];
   let attackers = atk.units.filter((u) => pend.unitUids.includes(u.uid));
@@ -674,7 +674,7 @@ function resolveAttack(st: GameState, pend: PendingAttack, blockerUids: string[]
     blockersLost: blockerFates().filter(Boolean).length,
     target: tgtCard, wallCard: extra.wallCard ?? null, reaction: reactions[0] ?? null, reactions, cancelled: extra.cancelled ?? false, tideBack: extra.tideBack ?? 0,
     targetDestroyed: !!targetUid && !def.buildings.some((b) => b.uid === targetUid), towerHits, progressRaided,
-    trap, blockerFromTrap,
+    trap, blockerFromTrap, mustered,
   });
   /** Garrison troops leave once the fight is over (their cards go to the discard). */
   const dismissGarrison = () => {
@@ -1026,6 +1026,25 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
       }
       const blockers = [...new Set(action.blockerUids ?? [])];
       if (st.pending.kind === 'action' && blockers.length) throw new RuleError('Units cannot block a scheme.');
+      let mustered: string | null = null;
+      if (action.musterUid) {
+        // Call to Arms: one unit card from hand rushes straight into the fight as a blocker.
+        if (st.pending.kind !== 'attack') throw new RuleError('Troops can only be called to arms against an attack.');
+        const inst = def.hand.find((c) => c.uid === action.musterUid);
+        if (!inst) throw new RuleError('That unit is not in your hand.');
+        const card = getCard(inst.cardId);
+        if (card.kind !== 'unit') throw new RuleError('Only a unit can be called to arms.');
+        if (def.units.length >= RULES.maxUnits) throw new RuleError('Your army is at full strength.');
+        if (!canDeploy(def, card)) throw new RuleError(`Requires a working ${card.requiresToDeploy}.`);
+        if (def.prosperity < costOf(def, card)) throw new RuleError('Not enough Prosperity to call that unit to arms.');
+        changeRes(st, defender, 'prosperity', -costOf(def, card), events);
+        def.hand = def.hand.filter((c) => c.uid !== inst.uid);
+        events.push({ type: 'cardPlayed', player: defender, cardId: card.id });
+        addUnit(st, defender, card.id, events, inst.uid);
+        blockers.push(inst.uid);
+        mustered = card.id;
+        log(st, defender, `${def.name} calls ${card.name} to arms!`);
+      }
       for (const uid of blockers) {
         const u = def.units.find((x) => x.uid === uid);
         if (!u) throw new RuleError('Unknown blocker.');
@@ -1035,7 +1054,7 @@ export function applyAction(state: GameState, pid: PlayerId, action: Action): Ap
       const pend = st.pending;
       st.pending = null;
       st.phase = 'main';
-      if (pend.kind === 'attack') resolveAttack(st, pend, blockers, reaction, events);
+      if (pend.kind === 'attack') resolveAttack(st, pend, blockers, reaction, events, mustered);
       else resolveAction(st, pend, reaction, events);
       break;
     }
