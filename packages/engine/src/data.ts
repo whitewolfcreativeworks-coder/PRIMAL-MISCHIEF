@@ -5,9 +5,9 @@ import type { Age, CardDef, CivDef, CivId } from './types';
 export const RULES = {
   handSize: 6,
   handLimit: 9, // effects that draw extra cards can go above the hand size, up to this
-  startingStability: 22,
+  startingStability: 30,
   /** Progress needed to leave each Age; at Age V it completes the Golden Age. */
-  progressToAdvance: [8, 10, 12, 14, 16] as readonly number[],
+  progressToAdvance: [11, 13, 16, 19, 22] as readonly number[],
   /** Base Prosperity each turn, by Age. */
   baseIncome: [3, 4, 5, 6, 7] as readonly number[],
   prosperityCap: 20,
@@ -16,6 +16,11 @@ export const RULES = {
   maxUnits: 6,
   turnLimit: 80, // player-turns before the match is decided on points
   trapsPerSpot: 3, // hidden cards under one building or the city
+  /** Rally: a civilization this far behind its rival in total Progress gets extra Prosperity each turn. */
+  rallyGap: 6,
+  rallyProsperity: 2,
+  /** Momentum a player gains when one of their buildings falls (their people rally). */
+  momentumOnLoss: 1,
 } as const;
 
 export const ALL_CARDS: CardDef[] = [...SHARED_CIV, ...SHARED_MIL, ...CIV_CARDS];

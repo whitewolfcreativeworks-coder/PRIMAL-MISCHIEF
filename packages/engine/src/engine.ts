@@ -1,4 +1,5 @@
 import { ageName, getCard, getCiv, progressNeeded, RULES } from './data';
+import { districtStatus, getDistrict } from './districts';
 import { shuffleInPlace } from './rng';
 import { HIDDEN_CARD } from './view';
 import type {
@@ -158,6 +159,10 @@ export interface CityLedger {
   /** Complete settlements (a working Farm, a fed Village, a staffed workplace), +1 Progress each. */
   sets: number;
   specialties: ('breadbasket' | 'crowded' | 'stone')[];
+  /** Complete districts (ids, see districts.ts), including the three-of-a-kind specialties. */
+  districts: string[];
+  /** Districts one building away from complete. */
+  near: { id: string; missing: string }[];
   /** Food left after everyone eats: kept (up to storeCap), the rest sold for Prosperity. */
   spare: number;
   keep: number;
@@ -212,11 +217,12 @@ export function cityLedger(p: PlayerState): CityLedger {
   if (breadbasket) specialties.push('breadbasket');
   if (fedHousing >= 3) specialties.push('crowded');
   if (now.filter((b) => tagsOf(b.cardId).includes('quarry')).length >= 3) specialties.push('stone');
+  const ds = districtStatus(p.civ, p.buildings, now);
   const armyEats = p.units.reduce((s, u) => s + (getCard(u.cardId).upkeep ?? 0), 0);
   const forArmy = pantry;
   const spare = Math.max(0, forArmy - armyEats);
   const keep = Math.min(storeCap, spare);
-  return { working, food, stored, storeCap, cityEats, forArmy, armyEats, hungry, workers, workersUsed: used, idle, sets, specialties, spare, keep, sold: spare - keep };
+  return { working, food, stored, storeCap, cityEats, forArmy, armyEats, hungry, workers, workersUsed: used, idle, sets, specialties, districts: ds.done, near: ds.near, spare, keep, sold: spare - keep };
 }
 
 /** Buildings that are working: not in Unrest, requirements met, fed and staffed. */
@@ -276,16 +282,19 @@ export function canDeploy(p: PlayerState, card: CardDef): boolean {
 export function incomeOf(p: PlayerState) {
   const L = cityLedger(p);
   const w = L.working;
-  let prosperity = RULES.baseIncome[p.age - 1], growth = 0;
+  let prosperity = RULES.baseIncome[p.age - 1], growth = 0, trade = 0;
   for (const b of p.buildings) {
     if (!w.has(b.uid)) continue;
     const c = getCard(b.cardId);
     const tags = c.tags ?? [];
+    if (trait(p) === 'trade' && (tags.includes('harbor') || tags.includes('market'))) trade++;
     prosperity += (c.income ?? 0) + (trait(p) === 'trade' && tags.includes('harbor') ? 1 : 0);
     if (tags.includes('quarry') && L.specialties.includes('stone')) prosperity += 1;
     growth += c.growth ?? 0;
   }
   growth += L.sets + (L.specialties.includes('crowded') ? 1 : 0);
+  growth += Math.floor(trade / 2); // Aksum's Red Sea Trade: every two working Harbors or Markets add +1 Progress
+  for (const id of L.districts) { const d = getDistrict(id); if (d.legacy) continue; prosperity += d.prosperity ?? 0; growth += d.progress ?? 0; }
   prosperity += L.sold;
   const foodShort = Math.max(0, L.armyEats - L.forArmy);
   return { prosperity, growth, upkeep: L.armyEats, net: prosperity, food: L.food, foodShort, ledger: L };
@@ -383,6 +392,7 @@ function destroyBuilding(st: GameState, pid: PlayerId, uid: string, events: Game
   events.push({ type: 'buildingDestroyed', player: pid, uid, cardId: b.cardId, progressLost: lost });
   log(st, pid, `${card.name} of ${p.name} falls (-1 Stability${lost ? `, -${lost} Progress` : ''}).`);
   changeRes(st, pid, 'stability', -1, events);
+  changeRes(st, pid, 'momentum', RULES.momentumOnLoss, events); // the people rally
 }
 
 function damageBuilding(st: GameState, pid: PlayerId, uid: string, amount: number, events: GameEvent[]) {
@@ -453,6 +463,13 @@ function beginTurn(st: GameState, pid: PlayerId, events: GameEvent[]) {
   changeRes(st, pid, 'prosperity', prosperity, events);
   if (L.hungry.length) log(st, pid, `${L.hungry.length} building${L.hungry.length > 1 ? 's go' : ' goes'} hungry in ${p.name}'s city.`);
   events.push({ type: 'income', player: pid, prosperity, growth: inc.growth, upkeep: eaten, food: L.food, foodSold: sold, hungry: L.hungry.length + hungry });
+  // Rally: a civilization that has fallen well behind pulls together.
+  const gap = totalProgress(opp) - totalProgress(p);
+  if (gap >= RULES.rallyGap) {
+    changeRes(st, pid, 'prosperity', RULES.rallyProsperity, events);
+    events.push({ type: 'rally', player: pid, prosperity: RULES.rallyProsperity, gap });
+    log(st, pid, `${p.name} is ${gap} Progress behind and rallies: +${RULES.rallyProsperity} Prosperity.`);
+  }
   if (inc.growth) addProgress(st, pid, inc.growth, events);
   if ((st.phase as string) === 'over') return; // growth may complete the Golden Age
   p.peek = trait(p) === 'scribes' ? { civ: topCard(p, 'civ'), mil: topCard(p, 'mil') } : null;
@@ -471,6 +488,13 @@ function endTurn(st: GameState, events: GameEvent[]) {
   st.players[other(pid)].handRevealedTo = false;
   if (st.turn >= RULES.turnLimit) { decideOnPoints(st, events); return; }
   beginTurn(st, other(pid), events);
+}
+
+/** All the Progress a civilization has made, across every Age it has completed. */
+export function totalProgress(p: PlayerState): number {
+  let total = p.progress;
+  for (let a = 1; a < p.age; a++) total += progressNeeded(a as Age);
+  return total;
 }
 
 export function score(p: PlayerState): number {

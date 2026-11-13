@@ -6,3 +6,4 @@ export * from './view';
 export * from './ai';
 export { nextRandom } from './rng';
 export * from './protocol';
+export * from './districts';

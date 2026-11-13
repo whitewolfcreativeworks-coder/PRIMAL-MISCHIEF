@@ -155,19 +155,38 @@ function candidates(st: GameState, me: PlayerId): Action[] {
   return [...listPlays(st, me), ...attackOptions(st, me)];
 }
 
+/** How far Normal's judgement wobbles (in evaluation points). */
+export let NORMAL_SLIP = 3;
+export function setNormalSlip(v: number) { NORMAL_SLIP = v; }
+
 function noise(seed: number): number {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
   return x - Math.floor(x);
 }
 
+/** Did this player send troops across the river on its own previous turn? */
+function attackedLastTurn(st: GameState, me: PlayerId): boolean {
+  return st.log.some((l) => l.player === me && l.turn === st.turn - 2 && /sends \d+ units? across/.test(l.text));
+}
+
+/**
+ * Tug of war: after an attack, Easy and Normal usually spend a turn building
+ * instead of pressing again, which gives the rival a window to strike back.
+ * Only a clearly winning attack overrides the pause. Hard keeps pressing.
+ */
+export const ATTACK_PAUSE: Record<Difficulty, number> = { easy: 4, normal: 2.5, hard: 0 };
+
 function greedy(st: GameState, me: PlayerId, diff: Difficulty, salt = 0): { action: Action; value: number } {
   let bestA: Action = { type: 'endTurn' };
   let bestV = evaluate(st, me) + 0.25;
+  const pause = attackedLastTurn(st, me) ? ATTACK_PAUSE[diff] : 0;
   candidates(st, me).forEach((a, i) => {
     const s = tryApply(st, me, a);
     if (!s) return;
     let v = evaluate(settle(s, me, diff), me);
-    if (diff === 'easy') v += (noise(st.turn * 131 + i * 7 + salt) - 0.5) * 8;
+    // Easy and Normal misjudge like people do: Easy often, Normal now and then. Hard plays it straight.
+    if (diff !== 'hard') v += (noise(st.turn * 131 + i * 7 + salt + me * 977) - 0.5) * (diff === 'easy' ? 8 : NORMAL_SLIP);
+    if (a.type === 'attack') v -= pause;
     if (v > bestV) { bestV = v; bestA = a; }
   });
   return { action: bestA, value: bestV };

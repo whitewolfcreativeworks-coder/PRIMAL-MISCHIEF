@@ -190,6 +190,16 @@ function smoke(L: Item, x: number, y: number, h: number, sway = 3) {
   L.smoke += d;
 }
 
+/** A fallen house: broken stubs of wall, a heap of rubble and a thin plume of smoke. */
+function ruin(L: Item, x: number, w: number, h: number, y: number, R: () => number) {
+  const top = (k: number) => y - h * (0.18 + R() * k);
+  L.dark += poly([[x, y], [x, top(0.55)], [x + w * 0.16, top(0.3)], [x + w * 0.24, y - h * 0.12], [x + w * 0.7, y - h * 0.1], [x + w * 0.78, top(0.4)], [x + w, top(0.2)], [x + w, y]]);
+  L.shade += poly([[x - w * 0.1, y], [x + w * 0.2, y - h * 0.16], [x + w * 0.55, y - h * 0.22], [x + w * 1.1, y]]);
+  // embers still glowing in the rubble
+  for (let k = 0; k < 3; k++) L.glow += rect(x + w * (0.25 + R() * 0.5), y - h * (0.05 + R() * 0.12), 1.4, 1.2);
+  smoke(L, x + w * 0.5, y - h * 0.3, 14 + R() * 10, 2.4);
+}
+
 function palm(L: Item, x: number, h: number, y = 0) {
   const tx = x + h * 0.12;
   const ty = y - h;
@@ -769,6 +779,11 @@ function defences(S: Scene, civ: Civ, age: Age, golden: boolean) {
   }
 }
 
+/** The colour behind the skyline where the panel is taller than the panorama (sky for the far bank, ground for the near). */
+export function skylineBackdrop(p: Palette, side: 'near' | 'far'): string {
+  return side === 'far' ? desat(mix(p.ink, p.primary, 0.3), 0.35) : desat(mix(p.ink, p.primary, 0.45), 0.3);
+}
+
 /* ------------------------------------------------------------------------ */
 /* Public component                                                           */
 /* ------------------------------------------------------------------------ */
@@ -779,12 +794,18 @@ export function Skyline({
   palette,
   side,
   className,
+  growth = 0,
+  ruins = 0,
 }: {
   civ: Civ;
   age: Age;
   palette: Palette;
   side: 'near' | 'far';
   className?: string;
+  /** How far through the current Age (0–1): the town grows house by house toward the next Age. */
+  growth?: number;
+  /** Houses lying in ruins (from Stability lost to attacks and schemes). */
+  ruins?: number;
 }) {
   const uid = 'pmsky' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const id = (n: string) => `${uid}-${n}`;
@@ -804,8 +825,10 @@ export function Skyline({
   const waterLow = mix(p.ink, p.primary, 0.3);
   const bg = far ? skyLow : groundTop;
   const sil = mix(p.ink, p.primary, 0.18);
-  const tone = (k: number): Tones => {
-    const body = mix(bg, sil, k);
+  // The living town is drawn in warm, lit stone so it reads against the bank; far scenery stays in shadow.
+  const litSil = desat(mix(p.secondary, p.accent, 0.35), 0.25);
+  const tone = (k: number, lit = false): Tones => {
+    const body = mix(bg, lit ? litSil : sil, k);
     return {
       body,
       shade: mix(body, p.ink, 0.35),
@@ -819,17 +842,30 @@ export function Skyline({
       water: mix(bg, waterTop, 0.7),
     };
   };
-  const S = new Scene({ far: tone(far ? 0.2 : 0.1), back: tone(0.38), main: tone(0.55) });
+  const S = new Scene({ far: tone(far ? 0.2 : 0.1), back: tone(0.32, true), main: tone(0.5, true) });
   const R = rng(seedOf(civ + a));
 
   scenery(S, civ, a);
   landscape(S, civ, a, R);
-  const all = slots(civ).slice(0, COUNT[a - 1]);
+  // The town grows house by house through each Age (Progress), and loses houses to ruin (Stability).
+  const g = Math.min(1, Math.max(0, growth || 0));
+  const nextN = a < 5 ? COUNT[a] : 30;
+  const n = Math.round(COUNT[a - 1] + (nextN - COUNT[a - 1]) * g);
+  const all = slots(civ).slice(0, Math.min(30, n));
   const prevN = a > 1 ? COUNT[a - 2] : 0;
+  // Ruins take the newest houses first, spread across the town.
+  const ruinSet = new Set<Slot>();
+  const nr = Math.min(Math.max(0, Math.round(ruins)), Math.max(0, all.length - 2));
+  for (let k = 0; k < nr; k++) ruinSet.add(all[Math.max(0, all.length - 1 - k * 2 - (k >= all.length / 2 ? 1 : 0)) % all.length]);
+  const Rr2 = rng(seedOf(civ + 'ruin'));
+  const draw = (L: Item, s: Slot) => {
+    if (ruinSet.has(s)) { const w = s.w, h = 14 * HMUL[a - 1] * s.h; ruin(L, s.x - w / 2, w, h, s.back ? -3 : 0, Rr2); return; }
+    dwelling(L, civ, all.indexOf(s) >= prevN && a > 1 ? a - 1 : a, s, R, golden);
+  };
   const B = S.item('back');
-  for (const s of all.filter((s) => s.back)) dwelling(B, civ, all.indexOf(s) >= prevN && a > 1 ? a - 1 : a, s, R, golden);
+  for (const s of all.filter((s) => s.back)) draw(B, s);
   signature(S, civ, a, R, golden);
-  for (const s of all.filter((s) => !s.back)) dwelling(S.item('main'), civ, all.indexOf(s) >= prevN && a > 1 ? a - 1 : a, s, R, golden);
+  for (const s of all.filter((s) => !s.back)) draw(S.item('main'), s);
   // hearth smoke in the early, small settlements
   if (a <= 3) {
     const Sm = S.item('main');
@@ -871,7 +907,7 @@ export function Skyline({
 
   const scenery_ = S.items.filter((it) => it.free).map(renderItem);
   const town = S.items.filter((it) => !it.free).map(renderItem);
-  const TS = 'scale(1.2 1.45) translate(-400 0)';
+  const TS = far ? 'scale(1.45 1.75) translate(-400 0)' : 'scale(1.5 1.8) translate(-400 0)';
   const ripples = 'M40,0h40M150,4h60M300,1h36M420,5h50M560,2h44M690,5h36';
 
   return (

@@ -1,3 +1,4 @@
+// usage: npx tsx test/simulate-par.ts [games-per-pairing] [difficulty] [focus-civ]
 // Parallel balance run: npx tsx test/simulate-par.ts [games-per-pairing] [difficulty]
 import { fork } from 'node:child_process';
 import { availableParallelism } from 'node:os';
@@ -21,7 +22,8 @@ if (process.env.PM_WORKER) {
   const n = Number(process.argv[2] ?? 8);
   const diff = (process.argv[3] ?? 'normal') as Difficulty;
   const jobs: Job[] = [];
-  for (const x of CIVS) for (const y of CIVS) if (x.id !== y.id) for (let i = 0; i < n; i++) jobs.push({ a: x.id, b: y.id, i, diff });
+  const focus = process.argv[4]; // optional: only pairings involving this civilization
+  for (const x of CIVS) for (const y of CIVS) if (x.id !== y.id && (!focus || x.id === focus || y.id === focus)) for (let i = 0; i < n; i++) jobs.push({ a: x.id, b: y.id, i, diff });
   const k = Math.max(1, availableParallelism() - 1);
   const chunks: Job[][] = Array.from({ length: k }, (_, c) => jobs.filter((_, j) => j % k === c));
   const t0 = Date.now();

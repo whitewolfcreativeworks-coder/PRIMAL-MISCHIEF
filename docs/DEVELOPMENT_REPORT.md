@@ -149,3 +149,27 @@ important manual check remaining.
   - Stills checked in landscape and portrait.
 - **Not yet verified.**
   - Frame rate on a real iPad. Cities at Age V are dense, about 150 meshes. If needed, the bloom can be turned down (`Theater.setBloom`) or dense city details trimmed.
+
+## v0.8: fair computer, longer games, connected cities, living skyline
+
+- **Why.** After about 50 games the owner had won 3: the computer felt like it
+  played perfectly, matches ended fast, construction cards felt unconnected,
+  and play was one-sided.
+- **Fair computer.** The single-player computer was being handed the full game
+  state (only traps were masked), so it could see the human's hand. It now
+  decides from `viewFor`, exactly what a human rival would see. Normal makes
+  occasional misjudgements; after attacking, Easy and Normal usually take a
+  turn to build.
+- **Longer games.** Progress per Age 11/13/16/19/22 (was 8/10/12/14/16);
+  Stability 30 (was 22). About 32 player-turns a game (was 21).
+- **Tug of war.** +1 Momentum when one of your buildings falls; +2 Prosperity
+  a turn while 6+ Progress behind.
+- **Districts and fallout.** Twelve districts (three of a kind, mixed, one per
+  civilization) pay every turn. Tapping a building shows what its fall breaks;
+  attacks on a building are confirmed on a fallout sheet.
+- **Living city.** Each bank's skyline grows with Progress and Age and shows
+  ruins as Stability is lost; visible with holograms off.
+- **Tested.** Engine 52 tests, client 58, server 7, all passing. 180-game
+  balance run (table in GAME_DESIGN). Board rendered in landscape and portrait
+  at iPad size; a real match started in headless Chromium with no errors.
+- **Not yet verified.** Hard-difficulty balance run; real iPad play.

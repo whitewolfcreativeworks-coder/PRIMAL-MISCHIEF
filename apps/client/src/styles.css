@@ -561,8 +561,15 @@ input, select { font: inherit; }
 
 .river-table { grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); gap: 0; overflow: hidden; }
 .bank { position: relative; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.bank .skyline { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: .9; }
+.bank .skyline { position: absolute; inset: auto 0 0 0; height: min(100%, 27vw); z-index: 0; pointer-events: none; }
+.bank .skyline { -webkit-mask-image: linear-gradient(transparent, #000 22%); mask-image: linear-gradient(transparent, #000 22%); }
+.bank .city-backdrop { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .bank .skyline svg { display: block; }
+/* The living city: a soft swell when it grows, a dim tremor when it is hurt. */
+.bank .skyline.city-rise { animation: city-rise calc(1.2s * var(--pace)) ease-out; }
+.bank .skyline.city-hurt { animation: city-hurt calc(1.2s * var(--pace)) ease-out; }
+@keyframes city-rise { 0% { filter: brightness(1); } 35% { filter: brightness(1.45) saturate(1.2); } 100% { filter: brightness(1); } }
+@keyframes city-hurt { 0%, 100% { filter: none; transform: none; } 15% { filter: brightness(.6) sepia(.4) hue-rotate(-20deg); transform: translateX(-3px); } 30% { transform: translateX(3px); } 45% { transform: translateX(-2px); } 60% { filter: brightness(.8); transform: none; } }
 .bank-content { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: clamp(4px, 1dvh, 12px); padding: 6px 0; min-height: 0; }
 .bank-far { border-radius: 22px 22px 0 0; background: linear-gradient(180deg, color-mix(in oklab, var(--opp-primary) 22%, #120d09), #1a140d 70%, #2a2416); }
 .bank-near { border-radius: 0 0 22px 22px; background: linear-gradient(0deg, color-mix(in oklab, var(--me-primary) 22%, #120d09), #1a140d 70%, #2a2416); }
@@ -749,3 +756,27 @@ button.chip { border: 0; font: inherit; color: inherit; cursor: pointer; min-hei
 .lesson-btn em { font-style: normal; opacity: .7; margin-left: 8px; }
 .lesson-btn.done { border-color: color-mix(in oklab, var(--c-secondary) 55%, transparent); }
 .lesson-btn.done em { color: var(--green); opacity: 1; }
+
+/* ---- districts, fallout forecast, key targets (v0.7) */
+.sheet-sub { text-align: center; color: var(--muted, #b9ab90); margin: 6px 0 10px; }
+.fallout { margin: 10px 0 4px; padding: 10px 14px; border-radius: 12px; background: rgba(140, 40, 30, .14); border: 1px solid rgba(220, 120, 90, .3); }
+.fallout h4 { margin: 0 0 6px; font-size: .95em; color: #f2b79b; display: flex; align-items: center; gap: 6px; }
+.fallout ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; }
+.fallout li.calm { color: var(--muted, #b9ab90); list-style: none; margin-left: -1.1em; }
+.bld-key { position: absolute; right: 6px; top: 6px; display: flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 99px;
+  background: #b4412e; color: #fff; font-size: .72em; font-weight: 700; pointer-events: none; box-shadow: 0 0 10px rgba(255, 110, 80, .6);
+  animation: keyPulse calc(1.6s * var(--pace, 1)) ease-in-out infinite; }
+@keyframes keyPulse { 50% { box-shadow: 0 0 2px rgba(255, 110, 80, .2); } }
+.districts { margin-top: 14px; }
+.districts h4 { margin: 0 0 8px; display: flex; align-items: center; gap: 6px; color: var(--gold-2); }
+.district-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.district { padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(255, 255, 255, .03); font-size: .86em; }
+.district.own { border-color: rgba(217, 164, 65, .35); }
+.district.near { border-color: #d9a441; background: rgba(217, 164, 65, .1); }
+.district.done { border-color: #7fc28a; background: rgba(110, 190, 120, .14); }
+.district .d-name { font-weight: 700; color: var(--ink, #f1e6cf); }
+.district .d-name em { font-weight: 400; font-style: normal; color: var(--muted, #b9ab90); font-size: .9em; }
+.district .d-recipe { margin-top: 2px; color: #e6cf98; }
+.district .d-bonus { margin-top: 3px; color: var(--muted, #b9ab90); }
+.district .d-state { margin-top: 4px; font-weight: 700; color: #9fdca8; min-height: 1em; }
+.district.near .d-state { color: #f0c96a; }

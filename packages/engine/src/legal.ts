@@ -1,6 +1,7 @@
 import { getCard, getCiv } from './data';
-import { ACTION_REACTIONS, applyAction, ATTACK_REACTIONS, braceOf, canDeploy, canPlayCard, costOf, incomeOf, other, requireMainPhase, ROLE_BEATS, SNARE_DAMAGE, trapRole, trapsOf, trapWallOf } from './engine';
+import { ACTION_REACTIONS, applyAction, ATTACK_REACTIONS, braceOf, canDeploy, canPlayCard, cityLedger, costOf, incomeOf, other, requireMainPhase, ROLE_BEATS, SNARE_DAMAGE, trapRole, trapsOf, trapWallOf } from './engine';
 import { RULES } from './data';
+import { getDistrict } from './districts';
 import type { Action, CardDef, GameState, PlayerId, PlayerState, UnitRole } from './types';
 
 /** All targets a card could legally take (undefined entry = no target needed). */
@@ -94,11 +95,11 @@ export function roleText(r: UnitRole): string {
   return [beats.length ? `Beats ${beats.join(' and ')}` : r === 'siege' ? 'Breaks walls and buildings' : 'Raids Progress', weak.length ? `weak to ${weak.join(' and ')}` : ''].filter(Boolean).join(' · ');
 }
 
-export interface CitySummary { food: number; foodShort: number; spare: number; growth: number; prosperity: number; workers: number; workersUsed: number; hungry: number; idle: number; sets: number; specialties: string[]; working: number }
+export interface CitySummary { food: number; foodShort: number; spare: number; growth: number; prosperity: number; workers: number; workersUsed: number; hungry: number; idle: number; sets: number; specialties: string[]; districts: string[]; near: string[]; working: number }
 export function citySummary(p: PlayerState): CitySummary {
   const inc = incomeOf(p), L = inc.ledger;
   return { food: L.food, foodShort: inc.foodShort, spare: L.spare, growth: inc.growth, prosperity: inc.prosperity, workers: L.workers, workersUsed: L.workersUsed,
-    hungry: L.hungry.length, idle: L.idle.length, sets: L.sets, specialties: [...L.specialties], working: L.working.size };
+    hungry: L.hungry.length, idle: L.idle.length, sets: L.sets, specialties: [...L.specialties], districts: [...L.districts], near: L.near.map((n) => n.id), working: L.working.size };
 }
 
 /**
@@ -126,8 +127,52 @@ export function previewPlay(st: GameState, pid: PlayerId, uid: string): string[]
   if (b.idle < a.idle) out.push(`staffs ${a.idle - b.idle} idle workplace${a.idle - b.idle > 1 ? 's' : ''}`);
   if (b.idle > a.idle) out.push(`no Worker free: ${b.idle - a.idle} workplace${b.idle - a.idle > 1 ? 's stand' : ' stands'} idle`);
   if (b.sets > a.sets) out.push(`completes a settlement (+1 Progress a turn)`);
-  for (const sp of b.specialties) if (!a.specialties.includes(sp)) out.push(`three of a kind: ${({ breadbasket: 'Breadbasket (+1 Food per Farm)', crowded: 'Crowded City (+1 Progress a turn)', stone: 'Stone City (+1 Prosperity per Quarry)' } as Record<string, string>)[sp]}`);
+  for (const id of b.districts) if (!a.districts.includes(id)) out.push(`completes the ${getDistrict(id).name} district: ${getDistrict(id).text}`);
+  for (const id of b.near) if (!a.near.includes(id) && !b.districts.includes(id)) {
+    const n = cityLedger(after.players[pid]).near.find((x) => x.id === id)!;
+    out.push(`one ${n.missing} away from ${getDistrict(id).name}`);
+  }
   if (b.foodShort > a.foodShort) out.push(`your army would go hungry: ${b.foodShort} Food short, the weakest desert`);
   else if (card.kind === 'unit') out.push(`eats ${card.upkeep ?? 0} Food a turn (${Math.max(0, b.spare)} spare after)`);
   return out;
 }
+
+// ------------------------------------------------------------------ fallout
+
+export interface Fallout {
+  /** Other buildings that would stop working. */
+  stops: string[];
+  lines: string[];
+}
+
+/**
+ * What happens to a city if one of its buildings falls, in plain words:
+ * which buildings stop, which districts break, what the city loses each turn.
+ * Uses only what both players can see.
+ */
+export function fallout(st: GameState, owner: PlayerId, uid: string): Fallout {
+  const p = st.players[owner];
+  const b = p.buildings.find((x) => x.uid === uid);
+  if (!b) return { stops: [], lines: [] };
+  const card = getCard(b.cardId);
+  const without: PlayerState = { ...p, buildings: p.buildings.filter((x) => x.uid !== uid) };
+  const L0 = cityLedger(p), L1 = cityLedger(without);
+  const i0 = incomeOf(p), i1 = incomeOf(without);
+  const stops = [...L0.working].filter((u) => u !== uid && !L1.working.has(u));
+  const nameOf = (u: string) => getCard(p.buildings.find((x) => x.uid === u)!.cardId).name;
+  const lines: string[] = [];
+  const now = [`−1 Stability`];
+  if (card.family === 'civ' && p.progress > 0) now.push(`up to −${card.age} Progress`);
+  lines.push(`At once: ${now.join(', ')}.`);
+  if (stops.length) lines.push(`Stops working: ${[...new Set(stops.map(nameOf))].join(', ')}.`);
+  const lost = L0.districts.filter((d) => !L1.districts.includes(d)).map((d) => getDistrict(d).name);
+  if (lost.length) lines.push(`Breaks ${lost.length > 1 ? 'districts' : 'the district'}: ${lost.join(', ')}.`);
+  if (L1.sets < L0.sets) lines.push(`Breaks ${L0.sets - L1.sets} settlement${L0.sets - L1.sets > 1 ? 's' : ''}.`);
+  const dp = i1.prosperity - i0.prosperity, dg = i1.growth - i0.growth;
+  const per = [dp < 0 && `${dp} Prosperity`, dg < 0 && `${dg} Progress`].filter(Boolean);
+  if (per.length) lines.push(`Every turn after: ${per.join(', ')}.`);
+  if (i1.foodShort > i0.foodShort) lines.push(`Their army goes ${i1.foodShort - i0.foodShort} Food short: soldiers desert.`);
+  if (lines.length === 1) lines.push('Nothing else depends on it.');
+  return { stops, lines };
+}
+

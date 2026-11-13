@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  actingPlayer, applyAction, chooseAction, CIVS, createGame, getCard, getCiv, HIDDEN_CARD, incomeOf, progressNeeded,
-  RuleError, validateData, viewFor, workingBuildings, cityLedger, type CivId, type GameState, type PlayerId,
+  actingPlayer, applyAction, chooseAction, CIVS, districtsFor, fallout, createGame, getCard, getCiv, HIDDEN_CARD, incomeOf, progressNeeded,
+  RuleError, RULES, validateData, viewFor, workingBuildings, cityLedger, type CivId, type GameState, type PlayerId,
 } from '../src/index';
 import { playOut } from './simulate';
 
 // ---------------------------------------------------------------- helpers
+
+const S = RULES.startingStability;
 
 function fresh(a: CivId = 'kush', b: CivId = 'sumer', seed = 42): GameState {
   return createGame(seed, [{ name: 'Ana', civ: a }, { name: 'Bo', civ: b }], 0).state;
@@ -74,7 +76,7 @@ describe('setup and draft', () => {
   });
   it('same seed produces identical games', () => {
     expect(JSON.stringify(playOut(7, 'aksum', 'inca'))).toEqual(JSON.stringify(playOut(7, 'aksum', 'inca')));
-  });
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------- growth
@@ -191,7 +193,7 @@ describe('economy and structural instability', () => {
     s = applyAction(s, 0, { type: 'play', uid: give(s, 0, 'arson'), targetUid: t }).state; // temple has 4 integrity: second arson finishes it
     const r = applyAction(s, 1, { type: 'respond', blockerUids: [] });
     expect(r.state.players[1].progress).toBe(2);
-    expect(r.state.players[1].stability).toBe(21);
+    expect(r.state.players[1].stability).toBe(S - 1);
     const inca = ready(fresh('kush', 'inca'));
     inca.players[1].progress = 5;
     const t2 = build(inca, 1, 'farm'); // Age I: -1 Progress, halved to 0
@@ -207,7 +209,7 @@ describe('combat across the river', () => {
   it('unblocked attacks hit the city and earn Momentum', () => {
     const st = ready(fresh());
     const s = attackAndResolve(st, [unit(st, 0, 'spearmen'), unit(st, 0, 'spearmen')], { kind: 'city' }).state;
-    expect(s.players[1].stability).toBe(18);
+    expect(s.players[1].stability).toBe(S - 4);
     expect(s.players[0].momentum).toBe(1);
   });
   it('blockers hold the riverbank with +1 Strength', () => {
@@ -225,7 +227,7 @@ describe('combat across the river', () => {
     const w = build(st, 1, 'walls');
     const r = attackAndResolve(st, [unit(st, 0, 'eliteGuard')], { kind: 'city' });
     const s = r.state;
-    expect(s.players[1].stability).toBe(22);
+    expect(s.players[1].stability).toBe(S);
     expect(s.players[1].buildings.find((b) => b.uid === w)!.damage).toBe(4);
     expect(r.events.find((e) => e.type === 'combat')).toMatchObject({ towerHits: 1, wallAbsorbed: 4 });
   });
@@ -298,13 +300,13 @@ describe('reactions and reversals', () => {
     st.players[1].prosperity = 5;
     const fr = give(st, 1, 'feignedRetreat');
     const s = attackAndResolve(st, [unit(st, 0, 'spearmen')], { kind: 'city' }, { reactionUid: fr, blockerUids: [] }).state;
-    expect(s.players[1].stability).toBe(22);
+    expect(s.players[1].stability).toBe(S);
     const st2 = ready(fresh('kush', 'aksum'));
     st2.players[1].prosperity = 5;
     st2.players[0].prosperity = 0;
     const tr = give(st2, 1, 'aksum_treaty');
     const s2 = attackAndResolve(st2, [unit(st2, 0, 'spearmen')], { kind: 'city' }, { reactionUid: tr, blockerUids: [] }).state;
-    expect(s2.players[1].stability).toBe(22);
+    expect(s2.players[1].stability).toBe(S);
     expect(s2.players[0].prosperity).toBe(3);
   });
   it('Turn the Tide sends excess damage back across the river', () => {
@@ -315,7 +317,7 @@ describe('reactions and reversals', () => {
     const tide = give(st, 1, 'turnTheTide');
     const s = attackAndResolve(st, [a], { kind: 'city' }, { reactionUid: tide, blockerUids: [d1, d2] }).state;
     // blockers (2+1)+(2+1)=6, doubled = 12; militia hp 2; 10 crashes back.
-    expect(s.players[0].stability).toBe(12);
+    expect(s.players[0].stability).toBe(S - 10);
   });
   it('Mirror the Scheme turns sabotage on its caster; Vigilant Watch foils it', () => {
     const st = ready(fresh());
@@ -332,7 +334,7 @@ describe('reactions and reversals', () => {
     st2.players[1].prosperity = 5;
     const w = give(st2, 1, 'vigilantWatch');
     s = applyAction(st2, 0, { type: 'play', uid: give(st2, 0, 'sack') }).state;
-    expect(applyAction(s, 1, { type: 'respond', reactionUid: w, blockerUids: [] }).state.players[1].stability).toBe(22);
+    expect(applyAction(s, 1, { type: 'respond', reactionUid: w, blockerUids: [] }).state.players[1].stability).toBe(S);
   });
   it('a reaction cannot answer the wrong kind of threat', () => {
     const st = ready(fresh());
@@ -385,7 +387,7 @@ describe('hidden traps', () => {
     expect(r.state.players[1].units.length).toBe(0); // the garrison left the field
     // Militia (hp 2) dies to the snare + garrison; Elite Guard (4 str) kills the 3-str... whatever gets through is braced by 2
     expect(c.attackerFates[1]).not.toBeNull();
-    expect(r.state.players[1].stability).toBe(22 - c.dealt);
+    expect(r.state.players[1].stability).toBe(S - c.dealt);
   });
   it('trap reactions fire for free; a trap Feigned Retreat calls the attack off', () => {
     const st = ready(fresh());
@@ -394,7 +396,7 @@ describe('hidden traps', () => {
     const r = attackAndResolve(st, [unit(st, 0, 'spearmen')], { kind: 'city' });
     const c = r.events.find((e) => e.type === 'combat');
     expect(c).toMatchObject({ cancelled: true, reaction: 'feignedRetreat' });
-    expect(r.state.players[1].stability).toBe(22);
+    expect(r.state.players[1].stability).toBe(S);
   });
   it('traps only spring where the attack lands, and unsprung ones return to the decks', () => {
     let st = ready(fresh());
@@ -447,7 +449,7 @@ describe('civilization traits', () => {
     const k = ready(fresh('kush', 'sumer'));
     const archer = unit(k, 0, 'archers');
     const s = attackAndResolve(k, [archer], { kind: 'city' }).state;
-    expect(s.players[1].stability).toBe(20); // Land of the Bow helps only while blocking
+    expect(s.players[1].stability).toBe(S - 2); // Land of the Bow helps only while blocking
     const c = ready(fresh('carthage', 'sumer'), 3);
     expect(applyAction(c, 0, { type: 'play', uid: give(c, 0, 'eliteGuard') }).state.players[0].prosperity).toBe(0); // 4 - 1 = 3
     const kk = ready(fresh('kush', 'sumer'), 3);
@@ -495,7 +497,7 @@ describe('victory and hidden information', () => {
   it('the AI always plays legal moves and every match ends', () => {
     for (let i = 0; i < 6; i++) {
       const civs = CIVS.map((c) => c.id);
-      const st = playOut(300 + i, civs[i % 5], civs[(i + 2) % 5], i % 3 === 0 ? 'hard' : i % 3 === 1 ? 'easy' : 'normal');
+      const st = playOut(300 + i, civs[i % 6], civs[(i + 2) % 6], i === 0 ? 'hard' : i % 2 ? 'easy' : 'normal');
       expect(st.phase).toBe('over');
     }
     let st = createGame(99, [{ name: 'A', civ: 'carthage' }, { name: 'B', civ: 'aksum' }]).state;
@@ -504,7 +506,7 @@ describe('victory and hidden information', () => {
       st = applyAction(st, pid, chooseAction(viewFor(st, pid), pid, 'normal')).state; // decides from its own view only
     }
     expect(st.phase).toBe('over');
-  }, 60_000);
+  }, 240_000);
 });
 
 // ---------------------------------------------------------------- call to arms
@@ -552,5 +554,56 @@ describe('Call to Arms', () => {
     const s = applyAction(st, 0, { type: 'attack', unitUids: [atk], target: { kind: 'city' } }).state;
     const a = chooseAction(s, 1, 'normal');
     expect(a.type === 'respond' && a.musterUid).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------- districts, fallout and comebacks
+
+
+describe('districts and fallout', () => {
+  it('a Market Town pays +1 Prosperity while all three pieces work', () => {
+    const st = ready(fresh('kush', 'sumer'));
+    const p = st.players[0];
+    p.buildings = [];
+    build(st, 0, 'farm'); build(st, 0, 'village'); build(st, 0, 'road');
+    const mkt = build(st, 0, 'market');
+    const before = incomeOf(p);
+    expect(before.ledger.districts).not.toContain('marketTown');
+    expect(before.ledger.near.map((n) => n.id)).toContain('marketTown');
+    build(st, 0, 'granary');
+    const after = incomeOf(p);
+    expect(after.ledger.districts).toContain('marketTown');
+    const f = fallout(st, 0, mkt);
+    expect(f.lines.some((l) => /Market Town/.test(l))).toBe(true);
+  });
+
+  it('every civilization has exactly one district of its own', () => {
+    for (const c of CIVS) expect(districtsFor(c.id).filter((d) => d.civ === c.id).length).toBe(1);
+  });
+
+  it('fallout lists the buildings that stop when a Farm falls', () => {
+    const st = ready(fresh('kush', 'sumer'));
+    const p = st.players[0];
+    p.buildings = [];
+    const farm = build(st, 0, 'farm');
+    build(st, 0, 'village'); build(st, 0, 'village');
+    const f = fallout(st, 0, farm);
+    expect(f.stops.length).toBeGreaterThan(0);
+    expect(f.lines.some((l) => /Stops working: Village/.test(l))).toBe(true);
+  });
+
+  it('a falling building gives its owner Momentum, and a civilization far behind rallies', () => {
+    const st = ready(fresh());
+    const atk = unit(st, 0, 'grandArmy');
+    const tgt = build(st, 1, 'farm');
+    st.players[1].momentum = 0;
+    const r = attackAndResolve(st, [atk], { kind: 'building', uid: tgt });
+    expect(r.events.some((e) => e.type === 'buildingDestroyed')).toBe(true);
+    expect(r.state.players[1].momentum).toBe(1);
+
+    const s2 = ready(fresh());
+    s2.players[0].age = 3; s2.players[1].progress = 0;
+    const end = applyAction(s2, 0, { type: 'endTurn' });
+    expect(end.events.some((e) => e.type === 'rally' && e.player === 1)).toBe(true);
   });
 });

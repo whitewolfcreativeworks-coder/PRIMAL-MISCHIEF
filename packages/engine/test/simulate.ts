@@ -1,12 +1,12 @@
 // AI-vs-AI balance simulation: npm run simulate -- [games-per-pairing] [difficulty]
-import { actingPlayer, applyAction, chooseAction, CIVS, createGame, validateData, type CivId, type Difficulty, type GameState } from '../src/index';
+import { actingPlayer, applyAction, chooseAction, CIVS, createGame, validateData, viewFor, type CivId, type Difficulty, type GameState } from '../src/index';
 
 export function playOut(seed: number, a: CivId, b: CivId, diff: Difficulty = 'normal', first?: 0 | 1) {
   let st: GameState = createGame(seed, [{ name: 'A', civ: a }, { name: 'B', civ: b }], first).state;
   let guard = 0;
   while (st.phase !== 'over' && guard++ < 8000) {
     const pid = actingPlayer(st)!;
-    st = applyAction(st, pid, chooseAction(st, pid, diff)).state;
+    st = applyAction(st, pid, chooseAction(viewFor(st, pid), pid, diff)).state; // each side sees only its own view
   }
   return st;
 }

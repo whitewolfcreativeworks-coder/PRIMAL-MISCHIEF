@@ -22,7 +22,7 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
           </section>
           <section>
             <h4><Icon name="growth" /> Growing through the Ages</h4>
-            <p>Civilization cards give Progress when you play them, and some buildings add Progress every turn. Fill the bar and your civilization enters its next Age: stronger cards join both of your decks and the oldest retire.</p>
+            <p>Civilization cards give Progress when you play them, and some buildings add Progress every turn. Fill the bar and your civilization enters its next Age: stronger cards join both of your decks and the oldest retire. Behind your buildings your city grows house by house as the bar fills, and houses fall to smoking ruin as your Stability is lost.</p>
           </section>
           <section>
             <h4><Icon name="prosperity" /> Prosperity</h4>
@@ -31,6 +31,14 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
           <section>
             <h4><Icon name="food" /> Food, people and work</h4>
             <p>Farms make Food (your land makes 1). Villages eat first and give a Worker and Progress; workplaces (Quarries, Markets, Temples…) need a Worker each. Your soldiers eat what is left: hungry soldiers desert, weakest first. A working Farm, a fed Village and a staffed workplace make a settlement (+1 Progress a turn); three of the same building is a specialty. Tap the Food chip on your bar for the city ledger.</p>
+          </section>
+          <section>
+            <h4><Icon name="star" /> Districts</h4>
+            <p>Buildings that work together pay extra every turn. Three Farms make a Breadbasket; a Market, a Granary and a Village make a Market Town; a Temple beside a Palace makes a Holy City; and every civilization has one district of its own. Tap the Food chip to see every district, and which ones you are one building away from.</p>
+          </section>
+          <section>
+            <h4><Icon name="broken" /> Pick your target</h4>
+            <p>Buildings depend on each other: a fallen Farm starves a Village, which leaves a Market without Workers. Tap any building to see what would fall with it. When you attack, key targets glow red with a count, and you confirm the target after seeing what its fall would do.</p>
           </section>
           <section>
             <h4><Icon name="role_spear" /> Who beats whom</h4>
@@ -54,7 +62,7 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
           </section>
           <section>
             <h4><Icon name="momentum" /> Momentum</h4>
-            <p>Winning a fight, holding the bank, playing a reaction and entering a new Age earn Momentum. Spend 3 on your civilization’s Signature ability. No timers: think as long as you like.</p>
+            <p>Winning a fight, holding the bank, playing a reaction, entering a new Age and losing a building (your people rally) earn Momentum. A civilization that falls {RULES.rallyGap} or more Progress behind rallies too: +{RULES.rallyProsperity} Prosperity each turn until it catches up. Spend 3 on your civilization’s Signature ability. No timers: think as long as you like.</p>
           </section>
         </div>
         <div className="sheet-actions"><button className="btn primary big" onClick={onClose}>To the river</button></div>

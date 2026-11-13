@@ -255,7 +255,7 @@ export const CIVS: CivDef[] = [
     history: 'From the early kingdom of Dʿmt to Aksum, highland states controlled Red Sea trade, minted coins and raised monumental stelae.',
     palette: { primary: '#1f4e6b', secondary: '#c9a24a', accent: '#efe3c2', ink: '#0d2231' },
     ages: ['Highland Villages', 'Dʿmt', 'Early Aksum', 'Red Sea Power', 'Golden Age of Aksum'],
-    trait: { kind: 'trade', name: 'Red Sea Trade', text: 'Each of your Harbors makes +1 extra Prosperity.' },
+    trait: { kind: 'trade', name: 'Red Sea Trade', text: 'Each of your Harbors makes +1 extra Prosperity, and every two working Harbors or Markets add +1 Progress a turn.' },
     signature: { name: 'Red Sea Commerce', cost: 3, text: '+2 Prosperity, and +1 Progress for each Harbor and Market you have.', effects: [{ op: 'gain', res: 'prosperity', amount: 2 }, { op: 'gain', res: 'progress', amount: 1, perTag: 'trade' }] },
     decks: decksFor('aksum'),
   },

@@ -21,12 +21,14 @@ the code disagree, the code wins and this file should be fixed.
 
 | Path | Condition |
 |---|---|
-| **Golden Age** | Complete Age V: 8 + 10 + 12 + 14 + 16 = 60 Progress in all. |
-| **Conquest** | The rival’s Stability falls from 22 to 0. |
+| **Golden Age** | Complete Age V: 11 + 13 + 16 + 19 + 22 = 81 Progress in all. |
+| **Conquest** | The rival’s Stability falls from 30 to 0. |
 | Chronicle (fallback) | After 80 player-turns, most total Progress + Stability. |
 
-In AI-vs-AI simulation about 58% of games end in a Golden Age and 42% in
-conquest; matches last about 14–15 turns per player.
+In AI-vs-AI simulation (v0.8) about 64% of games end in a Golden Age and 36%
+in conquest; matches last about 16 turns per player (32 player-turns). v0.8
+lengthened games by about half (they were 21 player-turns) after play-testing
+found them over too quickly for the back-and-forth to develop.
 
 ## 3. The two decks and the blind pick
 
@@ -105,6 +107,64 @@ Units that attacked are exhausted and cannot block on the rival’s next turn.
 | Treaty of Kings (Aksum) | Attack | Cancel; the attacker gains 3 Prosperity |
 | Vigilant Watch | Hostile tactic | Cancel it |
 | Mirror the Scheme | Hostile tactic | Cancel it and turn it on its caster |
+
+### Districts and fallout (v0.8)
+
+Buildings that work together form **districts** that pay every turn while all
+their pieces are working (see `packages/engine/src/districts.ts`):
+
+| District | Pieces | Bonus |
+|---|---|---|
+| Breadbasket | 3 Farms | +1 Food per Farm |
+| Crowded City | 3 fed Villages | +1 Progress |
+| Stone City | 3 Quarries | +1 Prosperity per Quarry |
+| Market Town | Market + Granary + Village | +1 Prosperity |
+| Craft Quarter | Workshop + 2 Quarries | +1 Progress |
+| Holy City | Temple + Palace | +1 Progress |
+| Iron and Cattle (Kush) | Iron Furnaces + Quarry + Farm/Cattle | +1 Prosperity, +1 Progress |
+| Red Sea Trade (Aksum) | Port of Adulis + Market + Farm/Fields | +2 Prosperity, +1 Progress |
+| Purple Trade (Carthage) | Purple Dye Works + 2 Harbors | +2 Prosperity |
+| Land Between the Rivers (Sumer) | Canals + 2 Farms + Village/Reed Houses | +1 Prosperity, +1 Progress |
+| Mountain Harvest (Inca) | 2 Farms/Terraces + Storehouse + Road | +1 Progress |
+| Trading Town (Norse) | Hedeby + Fishing/Farm + Village | +1 Prosperity, +1 Progress |
+
+Why: play-testing found construction cards felt unconnected; a hand of Farms
+had no plan beyond two of them. Districts give every grouping a goal, the card
+sheet says when a card completes one or leaves you "one Farm away", and the
+city ledger lists them all.
+
+**Fallout.** Tapping any building shows what its fall would do: buildings that
+stop working (a Farm feeds a Village that staffs a Market), districts and
+settlements broken, and Prosperity/Progress lost every turn. When attacking a
+building, key targets carry a count of what falls with them and the attack is
+confirmed on a sheet showing the fallout. This makes the attacker's choice of
+target, and the defender's choice of where to hide traps, a real decision.
+
+### Tug of war (v0.8)
+
+- **The people rally:** a player gains 1 Momentum whenever one of their
+  buildings falls.
+- **Rally:** a civilization 6 or more total Progress behind its rival gains
+  +2 Prosperity at the start of each turn until it catches up.
+- **The computer pauses:** after attacking, Easy and Normal usually spend
+  their next turn building (a 4 / 2.5 point penalty on attacks in their
+  evaluation), so the rival gets a window to strike back. Hard keeps pressing.
+
+### Fair computer (v0.8)
+
+The single-player computer now decides only from its own view (`viewFor`): it
+cannot see your hand, either deck order, or your traps. Before v0.8 it was
+handed the full state with only traps masked, so it could avoid attacking into
+a reaction card in your hand. Normal also misjudges now and then (a small
+random wobble in its evaluation); Easy more often; Hard plays it straight.
+
+### The living city (v0.8)
+
+Each bank's skyline is the civilization's city, in its own architecture. It
+grows house by house as Progress fills the Age bar (and by an Age's worth of
+houses at each new Age), and one house falls to smoking ruin for every 3
+Stability lost. A soft swell marks growth and a tremor marks damage; both scale
+with `--pace`.
 
 ### Call to Arms (v0.7)
 
@@ -194,26 +254,25 @@ names, trait, signature) and ten cards.
 ## 10. Balance
 
 `npx tsx packages/engine/test/simulate-par.ts 8 normal` plays every ordered
-pairing eight times with the normal AI. Latest, six civilizations (240 games),
-after Call to Arms (v0.7):
+pairing eight times with the normal AI. Latest (v0.8, six per pairing, 180
+games), with the computer deciding from its own view only:
 
 | Civ | Win rate |
 |---|---|
-| Kush | 54% |
-| Aksum | 45% |
-| Carthage | 53% |
-| Sumer | 29% |
-| Inca | 56% |
-| Norse | 64% |
+| Kush | 53% |
+| Aksum | 40% |
+| Carthage | 50% |
+| Sumer | 45% |
+| Inca | 60% |
+| Norse | 52% |
 
-First player wins 51%; about 21 player-turns a game; Golden Age 161,
-Conquest 79. Call to Arms moved no civilization more than a few points (the AI
-deploys most units on its own turn, so it can call one to arms in only ~4% of
-attacks, and does so ~70% of the time when it can; humans who hold soldiers
-in hand will use it more). Norse launched at 78% and was tuned down: Summer Raid no longer
-hits Stability, Coastal Raid no longer pays the raider, only Longship Raiders
-(not every raider) are Swift, plunder needs a Raider, Hedeby gives 1
-Prosperity. **Open issues:** Sumer remains weakest (29%); Norse edges up (64%).
+First player wins 51%; about 32 player-turns a game (was 21); Golden Age 116,
+Conquest 64. v0.8 lifted Sumer from 29% to 45% (longer games favour its
+builders). Aksum fell to 34% in longer races, so its Red Sea Trade trait now
+also gives +1 Progress for every two working Harbors or Markets, and its
+district +1 Progress (back to 40%). Carthage remains Aksum's hard counter
+(blockades choke trade). **Open issue:** Aksum is still the weakest; Inca the
+strongest. The `8 hard` run was not repeated for v0.8.
 
 Tuning so far: the riverbank +1 for defenders (without it attacks snowballed
 and 60% of games ended in conquest); Aksum’s trade trait narrowed to Harbors

@@ -1,4 +1,4 @@
-import type { Action, Family, GameState, PlayerId } from '@pm/engine';
+import { progressNeeded, type Action, type Family, type GameState, type PlayerId } from '@pm/engine';
 import { buildingUid, handUid, isPlay, unitUids, type Lesson, type Step, type TutorApi } from './tutorial';
 
 /*
@@ -99,7 +99,7 @@ const kush: Lesson = {
   title: 'Land of the Bow',
   summary: 'Draft archers, grow into Kerma, spring an Ambush on Carthage’s mercenaries and finish them with Rain of Arrows.',
   setup: (t) => {
-    t.edit((st) => { st.phase = 'draft'; st.players[0].progress = 7; });
+    t.edit((st) => { st.phase = 'draft'; st.players[0].progress = progressNeeded(1) - 1; });
     stack(t, 0, 'civ', 'kush_cattle');
     stack(t, 0, 'mil', 'kush_archers', 'ambush');
     t.build(1, 'carth_post');
@@ -108,7 +108,7 @@ const kush: Lesson = {
   },
   steps: [
     {
-      text: 'Kush holds the near bank of the river. Carthage holds the far bank, with two Mercenary Companies ready to cross. You win by filling your Age bar through all five Ages, or by bringing Carthage’s Stability from 22 to 0.',
+      text: 'Kush holds the near bank of the river. Carthage holds the far bank, with two Mercenary Companies ready to cross. You win by filling your Age bar through all five Ages, or by bringing Carthage’s Stability from 30 to 0.',
     },
     draftStep(
       'Every turn you refill your hand to 6 cards, and you choose blind how many come from each deck. Civilization cards grow your city. Military cards defend it. With soldiers facing you, take at least 2 Military cards.',
@@ -116,7 +116,7 @@ const kush: Lesson = {
       'Set at least 2 Military and at least 1 Civilization, keep every card, then tap Draw.',
     ),
     playStep(
-      'Your Age bar stands at 7 of 8. Cattle Herds costs 1 Prosperity, gives +1 Progress when built and makes 2 Food every turn: food for your people and your soldiers. Build it and watch Kush enter a new Age.',
+      'Your Age bar stands at 10 of 11. Cattle Herds costs 1 Prosperity, gives +1 Progress when built and makes 2 Food every turn: food for your people and your soldiers. Build it and watch Kush enter a new Age.',
       'kush_cattle',
       'Play Cattle Herds from your hand.',
     ),
@@ -175,7 +175,7 @@ const aksum: Lesson = {
   title: 'Coin and Stone',
   summary: 'Open the Port of Adulis, mint Gold Coinage into a new Age, stop Kush with a Treaty of Kings and cash in with Red Sea Commerce.',
   setup: (t) => {
-    t.edit((st) => { st.phase = 'draft'; const p = st.players[0]; p.age = 2; p.progress = 6; p.prosperity = 8; });
+    t.edit((st) => { st.phase = 'draft'; const p = st.players[0]; p.age = 2; p.progress = progressNeeded(2) - 4; p.prosperity = 8; });
     t.build(0, 'aksum_fields', 'market');
     stack(t, 0, 'civ', 'aksum_adulis', 'aksum_coinage');
     stack(t, 0, 'mil', 'aksum_treaty');
@@ -185,7 +185,7 @@ const aksum: Lesson = {
   },
   steps: [
     {
-      text: 'Aksum is in Age II with 6 of 10 Progress. Your Market sits idle: it needs a Road or Harbor to work. Across the river, Kush has two Archers. Aksum wins by trade, racing its Age bar to the Golden Age.',
+      text: 'Aksum is in Age II with 9 of 13 Progress. Your Market sits idle: it needs a Road or Harbor to work. Across the river, Kush has two Archers. Aksum wins by trade, racing its Age bar to the Golden Age.',
     },
     draftStep(
       'You refill to 6 cards, choosing blind from two decks. Trade buildings live in the Civilization deck, so take at least 2 Civilization cards. Keep at least 1 Military card in case Kush crosses.',
@@ -198,7 +198,7 @@ const aksum: Lesson = {
       'Play Port of Adulis.',
     ),
     playStep(
-      'Progress 7 of 10. Gold Coinage gives 1 Progress, +2 Prosperity, and +1 Progress for each Harbor or Market. You have two, so it brings 3 Progress. Mint it.',
+      'Progress 10 of 13. Gold Coinage gives 1 Progress, +2 Prosperity, and +1 Progress for each Harbor or Market. You have two, so it brings 3 Progress. Mint it.',
       'aksum_coinage',
       'Play Gold Coinage.',
     ),
@@ -215,7 +215,7 @@ const aksum: Lesson = {
       highlight: [{ kind: 'hand', cardId: 'aksum_treaty' }, { kind: 'button', name: 'respond' }],
     },
     draftStep(
-      'Peace holds and the treaty earned you 1 Momentum. Your trade paid well this turn: 5 base, 1 from your fields, 2 from Adulis and 2 from the Market. The Kush archers are still there and your Treaty is spent, so take at least 1 Military card.',
+      'Peace holds and the treaty earned you 1 Momentum. Your trade paid well this turn: Adulis, the Market and your Highland Fields together make the Red Sea Trade district, worth +2 Prosperity every turn on top of what each earns. The Kush archers are still there and your Treaty is spent, so take at least 1 Military card.',
       0, 1, 1,
       'Set at least 1 Military card, keep every card, then tap Draw.',
       { onEnter: (t) => t.opp({ type: 'endTurn' }) },
@@ -239,7 +239,7 @@ const carthage: Lesson = {
   title: 'Sea Lanes and Silver',
   summary: 'Build the Cothon, hire cheap Mercenaries and Raiders that cross at once, sink Aksum’s harbor and close its sea lanes.',
   setup: (t) => {
-    t.edit((st) => { st.phase = 'draft'; const p = st.players[0]; p.progress = 6; p.prosperity = 8; st.players[1].progress = 6; });
+    t.edit((st) => { st.phase = 'draft'; const p = st.players[0]; p.progress = progressNeeded(1) - 2; p.prosperity = 8; st.players[1].progress = 6; });
     stack(t, 0, 'civ', 'carth_cothon');
     stack(t, 0, 'mil', 'carth_mercs', 'raiders');
     t.build(0, 'farm'); // food for the soldiers you are about to hire
@@ -255,7 +255,7 @@ const carthage: Lesson = {
       'Set at least 2 Military and 1 Civilization, keep every card, then tap Draw.',
     ),
     playStep(
-      'Your Age bar is at 6 of 8. The Cothon, Carthage’s great harbor, gives 2 Progress and lets your units attack the turn they are deployed. Build it.',
+      'Your Age bar is at 9 of 11. The Cothon, Carthage’s great harbor, gives 2 Progress and lets your units attack the turn they are deployed. Build it.',
       'carth_cothon',
       'Play The Cothon.',
     ),
@@ -309,7 +309,7 @@ const sumer: Lesson = {
   title: 'Canal and Tablet',
   summary: 'Read the decks with your scribes, dig Irrigation Canals into the Age of Uruk, hold its great walls and Rebuild the City.',
   setup: (t) => {
-    t.edit((st) => { st.phase = 'draft'; const p = st.players[0]; p.progress = 6; p.prosperity = 7; });
+    t.edit((st) => { st.phase = 'draft'; const p = st.players[0]; p.progress = progressNeeded(1) - 2; p.prosperity = 7; });
     t.build(0, 'farm');
     t.unit(0, 'sumer_wagon');
     stack(t, 0, 'civ', 'sumer_canals');
@@ -330,7 +330,7 @@ const sumer: Lesson = {
       { highlight: [{ kind: 'button', name: 'draft' }] },
     ),
     playStep(
-      'Your Age bar is at 6 of 8. Irrigation Canals give 2 Progress and make each of your Farms produce +1 Food. They need a Farm, and you have one. Dig them.',
+      'Your Age bar is at 9 of 11. Irrigation Canals give 2 Progress and make each of your Farms produce +1 Food. They need a Farm, and you have one. Dig them.',
       'sumer_canals',
       'Play Irrigation Canals.',
     ),
@@ -369,7 +369,7 @@ const sumer: Lesson = {
       'Tap the Signature button: Rebuild the City.',
     ),
     {
-      text: 'The Walls of Uruk stand whole again and your Stability rose from 22 to 25. That is Sumer: read the decks, feed the city with canals, and outlast every assault.',
+      text: 'The Walls of Uruk stand whole again and your Stability rose from 30 to 33. That is Sumer: read the decks, feed the city with canals, and outlast every assault.',
     },
   ],
 };
@@ -385,7 +385,7 @@ const inca: Lesson = {
   setup: (t) => {
     t.edit((st) => {
       st.active = 1; // Carthage moves first in this lesson
-      const p = st.players[0]; p.progress = 5; p.momentum = 1;
+      const p = st.players[0]; p.progress = progressNeeded(1) - 3; p.momentum = 1;
       st.players[1].progress = 3;
       st.log = [{ turn: st.turn, player: null, text: 'Rival (Carthage) moves first.' }];
     });
@@ -420,7 +420,7 @@ const inca: Lesson = {
       'Play Qhapaq Ñan.',
     ),
     playStep(
-      'Progress 6 of 8. Qullqa Storehouses give 2 more Progress now and 2 every turn after. Build them and Cusco grows into a kingdom.',
+      'Progress 9 of 11. Qullqa Storehouses give 2 more Progress now and 2 every turn after. Build them and Cusco grows into a kingdom.',
       'inca_qullqa',
       'Play Qullqa Storehouses.',
     ),
@@ -463,7 +463,7 @@ const norse: Lesson = {
   title: 'Keel and Shield Wall',
   summary: 'Land Longship Raiders the turn they are built, plunder Sumer across the river, and finish with a Summer Raid.',
   setup: (t) => {
-    t.edit((st) => { st.phase = 'draft'; st.players[0].progress = 7; st.players[0].prosperity = 6; st.players[1].progress = 5; });
+    t.edit((st) => { st.phase = 'draft'; st.players[0].progress = progressNeeded(1) - 1; st.players[0].prosperity = 6; st.players[1].progress = 5; });
     stack(t, 0, 'civ', 'norse_fishing');
     stack(t, 0, 'mil', 'norse_raiders');
     t.build(1, 'farm', 'sumer_reeds');
@@ -478,7 +478,7 @@ const norse: Lesson = {
       'Set at least 1 Civilization and 1 Military card, keep every card, then tap Draw.',
     ),
     playStep(
-      'Your Age bar stands at 7 of 8. Fishing Grounds cost 1 Prosperity, give +1 Progress and make 2 Food every turn: food for your people and your crews. Build them.',
+      'Your Age bar stands at 10 of 11. Fishing Grounds cost 1 Prosperity, give +1 Progress and make 2 Food every turn: food for your people and your crews. Build them.',
       'norse_fishing',
       'Play Fishing Grounds.',
     ),

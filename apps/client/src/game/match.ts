@@ -93,7 +93,8 @@ export class LocalMatch extends Match {
     if (actingPlayer(this.state) !== 1) return;
     if (this.gate()) { this.timer = setTimeout(() => this.stepAI(), 150); return; }
     if (this.state.turn !== this.aiTurn) { this.aiTurn = this.state.turn; this.aiCount = 0; }
-    let action: Action = chooseAction(this.state, 1, this.setup.difficulty);
+    // The computer decides from what a real opponent can see: your hand, both decks and your traps stay hidden.
+    let action: Action = chooseAction(viewFor(this.state, 1), 1, this.setup.difficulty);
     if (this.state.phase === 'main' && ++this.aiCount > AI_ACTIONS_PER_TURN) action = { type: 'endTurn' };
     try {
       const r = applyAction(this.state, 1, action);

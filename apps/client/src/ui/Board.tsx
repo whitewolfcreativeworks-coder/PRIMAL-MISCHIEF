@@ -1,11 +1,11 @@
 import {
   actingPlayer, ageName, availableBlockers, canPlayCard, costOf, draftNeeded, getCard, getCiv, HIDDEN_CARD, incomeOf, isWorking,
-  canDeploy, maxIntegrity, musterable, other, playableReactions, previewPlay, progressNeeded, readyAttackers, roleOf, ROLE_LABEL, roleText, RULES, trapText, tuckSpots, unitMaxHp, unitStr, workingBuildings, cityLedger, beatsAny,
+  canDeploy, districtsFor, fallout, maxIntegrity, musterable, other, playableReactions, previewPlay, progressNeeded, readyAttackers, roleOf, ROLE_LABEL, roleText, RULES, trapText, tuckSpots, unitMaxHp, unitStr, workingBuildings, cityLedger, beatsAny,
   type BuildingInst, type GameEvent, type GameState, type PlayerId, type PlayerState, type UnitInst,
 } from '@pm/engine';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { CardArt, CivEmblem } from '../art/motifs';
-import { Skyline } from '../art/skyline';
+import { Skyline, skylineBackdrop } from '../art/skyline';
 import { isMuted, play, setMuted } from '../audio';
 import { LocalMatch, TutorialMatch, type AnyMatch } from '../game/match';
 import type { Highlight } from '../game/tutorial';
@@ -33,7 +33,9 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
   const [blockers, setBlockers] = useState<string[]>([]);
   const [reaction, setReaction] = useState<string | null>(null);
   const [muster, setMuster] = useState<string | null>(null);
-  const [inspect, setInspect] = useState<{ cardId: string; owner: PlayerId; note?: string } | null>(null);
+  const [inspect, setInspect] = useState<{ cardId: string; owner: PlayerId; note?: string; fallout?: string[] } | null>(null);
+  /** A rival building chosen as an attack target, waiting for confirmation (shows what its fall would do). */
+  const [aim, setAim] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [ledgerFor, setLedgerFor] = useState<PlayerId | null>(null);
   const [showHelp, setShowHelp] = useState(() => { if (match instanceof TutorialMatch) return false; try { return !localStorage.getItem('pm.seenHelp2'); } catch { return false; } });
@@ -113,6 +115,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
         case 'signature': sounds.add('reaction'); if (pace === 0) ban = { key: ++counter.current, text: e.name, sub: view.players[e.player].name, tone: 'gold' }; break;
         case 'resource': if (e.res === 'prosperity' && e.delta > 0 && e.player === me) sounds.add('coin'); break;
         case 'drafted': if (e.player !== me) add('opp', `Picked ${e.civ} Civilization · ${e.mil} Military`, 'plain'); sounds.add('card'); break;
+        case 'rally': ban = { key: ++counter.current, text: e.player === me ? 'Your people rally' : `${view.players[e.player].name} rallies`, sub: `${e.gap} Progress behind: +${e.prosperity} Prosperity`, tone: 'gold' }; break;
         case 'turnStart': if (!ban) ban = { key: ++counter.current, text: e.player === me ? 'Your turn' : `${view.players[e.player].name}'s turn`, tone: 'plain' }; sounds.add('turn'); break;
         case 'gameOver': sounds.add(e.winner === me ? 'victory' : 'defeat'); break;
       }
@@ -205,8 +208,8 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       return;
     }
     if (myMain && attackers.length && owner === opp) {
-      send({ type: 'attack', unitUids: attackers, target: { kind: 'building', uid: b.uid } });
-      setAttackers([]);
+      if (snap.coach) { send({ type: 'attack', unitUids: attackers, target: { kind: 'building', uid: b.uid } }); setAttackers([]); return; }
+      setAim(b.uid); play('tap');
       return;
     }
     const p = view!.players[owner];
@@ -217,7 +220,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       : L.hungry.includes(b.uid) ? 'Hungry: not enough Food. Build a Farm, or feed fewer soldiers.'
         : L.idle.includes(b.uid) ? 'Idle: no Worker free. A fed Village gives one.'
           : !working ? `Not working: needs a working ${c.requires?.join(' or ')}.` : `Integrity ${maxIntegrity(b) - b.damage}/${maxIntegrity(b)}.`;
-    setInspect({ cardId: b.cardId, owner, note });
+    setInspect({ cardId: b.cardId, owner, note, fallout: fallout(view!, owner, b.uid).lines });
   }
 
   function tapUnit(owner: PlayerId, u: UnitInst) {
@@ -251,6 +254,8 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
     const w = workingBuildings(p);
     const isTarget = (targeting && ((targetSpec === 'enemyBuilding' && owner === opp) || (targetSpec === 'ownBuilding' && owner === me))) || (myMain && attackers.length > 0 && owner === opp);
     const hidden = (uid: string) => (owner === me ? (p.traps ?? []).filter((t) => t.at === uid).length : 0);
+    // How much else falls with this building (other buildings stopped + districts broken): marks key targets.
+    const keystoneOf = (uid: string) => { const f = fallout(view!, owner, uid); return f.stops.length + f.lines.filter((l) => l.startsWith('Breaks')).length; };
     const L = cityLedger(p);
     const threatened = pending?.kind === 'attack' && pending.target.kind === 'building' ? pending.target.uid : pending?.kind === 'action' ? pending.targetUid : undefined;
     return (
@@ -258,7 +263,8 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
         {p.buildings.map((b) => (
           <BuildingTile key={b.uid} glow={glowPiece('building', owner === me ? 'me' : 'opp', b.cardId)} b={b} p={p} working={w.has(b.uid)} fx={fx[b.uid]}
             targetable={!!isTarget || (!!hiding && owner === me && spots.has(b.uid))} threatened={threatened === b.uid} onTap={() => tapBuilding(owner, b)} floaters={floatFor(b.uid)}
-            hidden={hidden(b.uid)} lack={L.hungry.includes(b.uid) ? 'hungry' : L.idle.includes(b.uid) ? 'idle' : undefined} />
+            hidden={hidden(b.uid)} lack={L.hungry.includes(b.uid) ? 'hungry' : L.idle.includes(b.uid) ? 'idle' : undefined}
+            keystone={owner === opp && myMain && attackers.length > 0 ? keystoneOf(b.uid) : 0} />
         ))}
         {ghosts.filter((g) => g.owner === owner && g.kind === 'building').map((g) => <GhostTile key={g.key} cardId={g.cardId} />)}
         {p.buildings.length === 0 && !ghosts.some((g) => g.owner === owner && g.kind === 'building') && <div className="row-empty">{owner === me ? 'Your bank awaits its first building' : 'An empty riverbank'}</div>}
@@ -312,7 +318,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
 
       <main className="table river-table">
         <section className={`bank bank-far ${shake === opp ? 'shake' : ''}`}>
-          <div className="skyline"><Skyline civ={O.civ} age={O.age} palette={oppCiv.palette} side="far" /></div>
+          <LivingCity p={O} side="far" />
           <div className="bank-content">
             {renderBuildings(opp)}
             {renderUnits(opp)}
@@ -335,7 +341,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
                     const theirs = O.units.filter((u) => !u.attacked && !u.blocked).map((u) => roleOf(u.cardId));
                     const good = mine.filter((r) => beatsAny(r, theirs)).length, bad = theirs.filter((r) => beatsAny(r, mine)).length;
                     const roles = new Set(mine).size;
-                    return <span className="hint matchup">{theirs.length ? `Their bank: ${theirs.map((r) => ROLE_LABEL[r]).join(', ')}. ` : 'Their bank is empty. '}{good ? `${good} of yours beat them (+2). ` : ''}{bad ? `${bad} of theirs beat yours. ` : ''}{roles >= 3 ? 'Mixed army +2.' : ''}</span>;
+                    return <span className="hint matchup">{theirs.length ? `Their soldiers: ${theirs.map((r) => ROLE_LABEL[r]).join(', ')}. ` : 'No soldiers guard their bank. '}{good ? `${good} of yours beat them (+2). ` : ''}{bad ? `${bad} of theirs beat yours. ` : ''}{roles >= 3 ? 'Mixed army +2.' : ''}</span>;
                   })()}
                   <button className="btn ghost" onClick={() => setAttackers([])}>Cancel</button>
                 </>
@@ -363,7 +369,7 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
         </section>
 
         <section className={`bank bank-near ${shake === me ? 'shake' : ''}`}>
-          <div className="skyline"><Skyline civ={P.civ} age={P.age} palette={civ.palette} side="near" /></div>
+          <LivingCity p={P} side="near" />
           <div className="bank-content">
             {renderUnits(me)}
             {renderBuildings(me)}
@@ -428,10 +434,28 @@ export function Board({ match, onExit, onRematch, pace }: { match: AnyMatch; onE
       {inspect && (
         <Sheet onClose={() => setInspect(null)} wide>
           <Inspector cardId={inspect.cardId} civ={view.players[inspect.owner].civ} note={inspect.note}>
+            {inspect.fallout && <FalloutList title={inspect.owner === me ? 'If your rival destroys it' : 'If you destroy it'} lines={inspect.fallout} />}
             <button className="btn ghost big" onClick={() => setInspect(null)}>Close</button>
           </Inspector>
         </Sheet>
       )}
+
+      {aim && myMain && (() => {
+        const tb = O.buildings.find((b) => b.uid === aim);
+        if (!tb) return null;
+        const fo = fallout(view, opp, aim);
+        return (
+          <Sheet onClose={() => setAim(null)}>
+            <h3 className="sheet-title">Send {attackers.length} unit{attackers.length > 1 ? 's' : ''} ({attackPower} Strength) at {getCard(tb.cardId).name}?</h3>
+            <p className="sheet-sub">Integrity {maxIntegrity(tb) - tb.damage}/{maxIntegrity(tb)}{(O.traps ?? []).length ? ` · your rival has hidden ${(O.traps ?? []).length} trap${(O.traps ?? []).length > 1 ? 's' : ''} somewhere` : ''}.</p>
+            <FalloutList title="If it falls" lines={fo.lines} />
+            <div className="sheet-actions">
+              <button className="btn ghost big" onClick={() => setAim(null)}>Choose another</button>
+              <button className="btn danger big" onClick={() => { send({ type: 'attack', unitUids: attackers, target: { kind: 'building', uid: aim } }); setAttackers([]); setAim(null); }}>Attack</button>
+            </div>
+          </Sheet>
+        );
+      })()}
 
       {confirmSig && (
         <Sheet onClose={() => setConfirmSig(false)}>
@@ -535,7 +559,7 @@ function PlayerBar({ p, isMe, active, extra, floaters, over, onCity }: { p: Play
           title={`Food: ${L.food} made${L.stored ? ` + ${L.stored} stored` : ''}, city eats ${L.cityEats}, army eats ${L.armyEats}${inc.foodShort ? ` — ${inc.foodShort} short!` : ''}`}>
           <Icon name="food" size={15} /><b>{L.food + L.stored - L.cityEats - L.armyEats}</b><em>spare</em>
           <span className="sep" /><Icon name="worker" size={14} /><b>{L.workers - L.workersUsed}</b><em>free</em>
-          {L.sets > 0 && <><span className="sep" /><Icon name="star" size={13} /><b>{L.sets}</b></>}
+          {L.sets + L.districts.length > 0 && <><span className="sep" /><Icon name="star" size={13} /><b>{L.sets + L.districts.length}</b></>}
         </button>
         <div className="momentum" title="Momentum: from victories, reactions and new Ages; spend 3 on your Signature">
           {Array.from({ length: RULES.momentumCap }, (_, i) => <span key={i} className={i < p.momentum ? 'on' : ''} />)}
@@ -596,8 +620,8 @@ function DraftPanel({ P, need, civPick, setCiv, discards, onDraft, glow }: {
   );
 }
 
-function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters, glow, hidden = 0, lack }: {
-  lack?: 'hungry' | 'idle'; hidden?: number; glow?: boolean; b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
+function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floaters, glow, hidden = 0, lack, keystone = 0 }: {
+  keystone?: number; lack?: 'hungry' | 'idle'; hidden?: number; glow?: boolean; b: BuildingInst; p: PlayerState; working: boolean; fx?: string; targetable: boolean; threatened: boolean; onTap: () => void; floaters: ReactNode;
 }) {
   const card = getCard(b.cardId);
   const pal = paletteFor(card, p.civ);
@@ -624,8 +648,47 @@ function BuildingTile({ b, p, working, fx, targetable, threatened, onTap, floate
       {state === 'idle' && <div className="bld-flag idle" title="Idle: no Worker free"><Icon name="worker" size={12} /></div>}
       <i className={`bld-age age-${card.age}`} aria-hidden />
       {hidden > 0 && <div className="bld-traps" aria-label={`${hidden} hidden trap${hidden > 1 ? 's' : ''}`}>{Array.from({ length: hidden }, (_, i) => <i key={i} />)}</div>}
+      {keystone > 0 && <div className="bld-key" aria-label={`Key target: ${keystone} more thing${keystone > 1 ? 's' : ''} fall with it`}><Icon name="broken" size={11} />{keystone}</div>}
       <div className="floaters">{floaters}</div>
     </button>
+  );
+}
+
+/**
+ * The city on each bank: it grows house by house as Progress fills the Age bar,
+ * and houses fall to ruin as Stability is lost. A short rise or tremor marks each change.
+ */
+function LivingCity({ p, side }: { p: PlayerState; side: 'near' | 'far' }) {
+  const growth = p.progress / progressNeeded(p.age);
+  const ruins = Math.min(10, Math.floor(Math.max(0, RULES.startingStability - p.stability) / 3));
+  const key = `${p.age}:${Math.round(growth * 12)}:${ruins}`;
+  const prev = useRef({ key, ruins, size: p.age * 100 + growth * 100 });
+  const [fx, setFx] = useState('');
+  useEffect(() => {
+    const was = prev.current;
+    if (was.key === key) return;
+    const size = p.age * 100 + growth * 100;
+    setFx(ruins > was.ruins || size < was.size - 0.5 ? 'city-hurt' : size > was.size ? 'city-rise' : '');
+    prev.current = { key, ruins, size };
+    const t = setTimeout(() => setFx(''), 1400);
+    return () => clearTimeout(t);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+    <div className="city-backdrop" style={{ background: skylineBackdrop(getCiv(p.civ).palette, side) }} aria-hidden />
+    <div className={`skyline ${fx}`} aria-label={`${getCiv(p.civ).name}: Age ${p.age}, ${Math.round(growth * 100)}% toward the next${ruins ? `, ${ruins} houses in ruins` : ''}`}>
+      <Skyline civ={p.civ} age={p.age} palette={getCiv(p.civ).palette} side={side} growth={growth} ruins={ruins} />
+    </div>
+    </>
+  );
+}
+
+function FalloutList({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="fallout">
+      <h4><Icon name="broken" size={14} /> {title}</h4>
+      <ul>{lines.map((l) => <li key={l} className={/Nothing else/.test(l) ? 'calm' : ''}>{l}</li>)}</ul>
+    </div>
   );
 }
 
@@ -726,7 +789,6 @@ function LedgerSheet({ p, mine, onClose }: { p: PlayerState; mine: boolean; onCl
   if (L.idle.length) tips.push(`${L.idle.map(nameOf).join(', ')} ${L.idle.length > 1 ? 'stand' : 'stands'} idle with no Worker. A fed Village gives one.`);
   const lacking = farms <= houses && farms <= places ? 'a Farm' : houses <= places ? 'a Village' : 'a workplace (Quarry, Market, Temple)';
   tips.push(`Next settlement: add ${lacking}. Each working Farm + fed Village + staffed workplace gives +1 Progress a turn.`);
-  const SP: Record<string, string> = { breadbasket: 'Breadbasket: three Farms, +1 Food each', crowded: 'Crowded City: three Villages, +1 Progress a turn', stone: 'Stone City: three Quarries, +1 Prosperity each' };
   return (
     <Sheet onClose={onClose} wide>
       <h3 className="sheet-title">{mine ? 'Your city' : `${getCiv(p.civ).name}`}: food, people and work</h3>
@@ -754,12 +816,29 @@ function LedgerSheet({ p, mine, onClose }: { p: PlayerState; mine: boolean; onCl
           <h4><Icon name="star" size={16} /> Bonuses</h4>
           <dl>
             <div><dt>Complete settlements</dt><dd>{L.sets} (+{L.sets} Progress a turn)</dd></div>
-            {L.specialties.map((sp) => <div key={sp}><dt>Three of a kind</dt><dd>{SP[sp]}</dd></div>)}
+            <div><dt>Complete districts</dt><dd>{L.districts.length}</dd></div>
             <div><dt>Progress each turn</dt><dd>+{inc.growth}</dd></div>
             <div><dt>Prosperity each turn</dt><dd>+{inc.prosperity}</dd></div>
           </dl>
         </section>
       </div>
+      <section className="districts">
+        <h4><Icon name="star" size={16} /> Districts: combinations that pay every turn</h4>
+        <div className="district-grid">
+          {districtsFor(p.civ).map((d) => {
+            const done = L.districts.includes(d.id);
+            const near = L.near.find((n) => n.id === d.id);
+            return (
+              <div key={d.id} className={`district ${done ? 'done' : near ? 'near' : ''} ${d.civ ? 'own' : ''}`}>
+                <div className="d-name">{d.name}{d.civ && <em> · {getCiv(d.civ).name.replace(/^Kingdom of /, '')} only</em>}</div>
+                <div className="d-recipe">{d.parts.map((pt) => `${pt.n > 1 ? `${pt.n} ` : ''}${pt.label}`).join(' + ')}</div>
+                <div className="d-bonus">{d.text}</div>
+                <div className="d-state">{done ? '✓ Complete' : near ? `One ${near.missing} away` : ''}</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
       {mine && <ul className="ledger-tips">{tips.map((t) => <li key={t}>{t}</li>)}</ul>}
       <div className="sheet-actions"><button className="btn ghost" onClick={onClose}>Close</button></div>
     </Sheet>

@@ -283,6 +283,8 @@ export type GameEvent =
   | { type: 'unitDeserted'; player: PlayerId; uid: string; cardId: string }
   | { type: 'attackDeclared'; player: PlayerId; unitUids: string[]; target: AttackTarget }
   | { type: 'reaction'; player: PlayerId; cardId: string; reaction: ReactionKind }
+  /** A civilization far behind in Progress rallies for extra Prosperity this turn. */
+  | { type: 'rally'; player: PlayerId; prosperity: number; gap: number }
   | { type: 'reversed'; player: PlayerId; cardId: string }
   | {
       type: 'combat'; attacker: PlayerId; power: number; blocked: number; wallAbsorbed: number; dealt: number;
